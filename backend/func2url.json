@@ -1,4 +1,5 @@
 {
+  "vk-auth": "https://functions.poehali.dev/a86a2e10-be82-4415-81cd-9887738a3175",
   "media-upload": "https://functions.poehali.dev/6cc8c85a-b5e1-404b-ab3e-315b58940f51",
   "chats": "https://functions.poehali.dev/056b4c53-e701-4434-85b9-7ae146e97dc5",
   "stories": "https://functions.poehali.dev/fe54577c-6c23-457c-934b-948b3402a10c",

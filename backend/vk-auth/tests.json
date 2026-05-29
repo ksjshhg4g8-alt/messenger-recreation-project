@@ -1,0 +1,37 @@
+{
+  "tests": [
+    {
+      "name": "Config returns client_id",
+      "method": "GET",
+      "path": "/?action=config",
+      "expectedStatus": 200,
+      "expectedBody": {"client_id": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Unknown action returns 400",
+      "method": "GET",
+      "path": "/?action=unknown",
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Callback without data returns 400",
+      "method": "POST",
+      "path": "/?action=callback",
+      "body": {},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Me without token returns 401",
+      "method": "GET",
+      "path": "/?action=me",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
