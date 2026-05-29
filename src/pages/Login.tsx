@@ -20,10 +20,27 @@ export default function Login() {
   // восстановление: step 1 — логин, step 2 — ответ + новый пароль
   const [recStep, setRecStep] = useState(1);
   const [recFoundQuestion, setRecFoundQuestion] = useState("");
+  const [maintenance, setMaintenance] = useState(false);
 
   useEffect(() => {
     if (localStorage.getItem("auth_token")) navigate("/");
   }, [navigate]);
+
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      try {
+        const res = await fetch(`${AUTH_URL}?action=config`);
+        if (alive) setMaintenance(res.status === 402 || res.status >= 500);
+      } catch {
+        if (alive) setMaintenance(true);
+      }
+    };
+    check();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const saveAndGo = (data: { token: string; user: unknown }) => {
     localStorage.setItem("auth_token", data.token);
@@ -136,6 +153,18 @@ export default function Login() {
     <div className="flex items-start sm:items-center justify-center min-h-screen w-screen bg-mesh font-rubik overflow-y-auto py-6">
       <div className="w-full max-w-md mx-4 animate-slide-up">
         <div className="glass-strong rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
+          {maintenance && (
+            <div className="flex items-start gap-3 bg-amber-500/15 border border-amber-400/30 rounded-2xl p-3 animate-slide-up">
+              <Icon name="Wrench" size={18} className="text-amber-300 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-amber-200 text-sm font-semibold">Идут технические работы</p>
+                <p className="text-amber-100/70 text-xs leading-relaxed">
+                  Сервер временно недоступен. Вход появится через пару минут — попробуйте чуть позже.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col items-center gap-4">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center shadow-xl neon-glow animate-float">
               <Icon name="MessageCircle" size={36} className="text-white" />
