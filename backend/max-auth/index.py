@@ -65,7 +65,7 @@ def _max_send_message(user_id: str, text: str):
 def handler(event: dict, context) -> dict:
     '''
     Авторизация через мессенджер MAX по схеме бот + deep link.
-    Действия: config, start (создать сессию входа), webhook (приём событий бота), poll (статус входа).
+    Действия: config, start, webhook, poll, register, login, me, recover-question, recover-reset.
     '''
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors(), 'body': ''}
@@ -171,6 +171,8 @@ def handler(event: dict, context) -> dict:
             login = (body.get('login') or '').strip()
             password = body.get('password') or ''
             name = (body.get('name') or '').strip()
+            rec_question = (body.get('recovery_question') or '').strip()
+            rec_answer = (body.get('recovery_answer') or '').strip()
 
             if len(login) < 3:
                 return _resp(400, {'error': 'Логин минимум 3 символа'})
@@ -183,11 +185,51 @@ def handler(event: dict, context) -> dict:
 
             pwd_hash = _hash_password(password)
             display_name = name or login
+            rec_answer_hash = _hash_password(rec_answer.lower()) if (rec_question and rec_answer) else None
             cur.execute(
-                "INSERT INTO users (login, password_hash, name, last_login_at) VALUES (%s, %s, %s, NOW()) RETURNING id, name, avatar_url",
-                (login, pwd_hash, display_name)
+                "INSERT INTO users (login, password_hash, name, recovery_question, recovery_answer_hash, last_login_at) VALUES (%s, %s, %s, %s, %s, NOW()) RETURNING id, name, avatar_url",
+                (login, pwd_hash, display_name, rec_question or None, rec_answer_hash)
             )
             uid, uname, avatar = cur.fetchone()
+            token = _make_token(uid)
+            return _resp(200, {
+                'ok': True,
+                'token': token,
+                'user': {'id': uid, 'login': login, 'name': uname, 'avatar_url': avatar}
+            })
+
+        if action == 'recover-question':
+            body = json.loads(event.get('body') or '{}')
+            login = (body.get('login') or '').strip()
+            if not login:
+                return _resp(400, {'error': 'Введите логин'})
+            cur.execute(
+                "SELECT recovery_question, recovery_answer_hash FROM users WHERE lower(login) = lower(%s)",
+                (login,)
+            )
+            row = cur.fetchone()
+            if not row or not row[0] or not row[1]:
+                return _resp(404, {'error': 'Для этого логина восстановление недоступно'})
+            return _resp(200, {'ok': True, 'question': row[0]})
+
+        if action == 'recover-reset':
+            body = json.loads(event.get('body') or '{}')
+            login = (body.get('login') or '').strip()
+            answer = (body.get('recovery_answer') or '').strip()
+            new_password = body.get('new_password') or ''
+            if len(new_password) < 6:
+                return _resp(400, {'error': 'Новый пароль минимум 6 символов'})
+            cur.execute(
+                "SELECT id, name, avatar_url, recovery_answer_hash FROM users WHERE lower(login) = lower(%s)",
+                (login,)
+            )
+            row = cur.fetchone()
+            if not row or not row[3]:
+                return _resp(404, {'error': 'Восстановление недоступно'})
+            if not _verify_password(answer.lower(), row[3]):
+                return _resp(401, {'error': 'Неверный ответ на секретный вопрос'})
+            uid, uname, avatar, _ = row
+            cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (_hash_password(new_password), uid))
             token = _make_token(uid)
             return _resp(200, {
                 'ok': True,
