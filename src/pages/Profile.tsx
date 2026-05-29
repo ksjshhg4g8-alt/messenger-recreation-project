@@ -104,6 +104,27 @@ export default function Profile() {
     setShowIosHint(true);
   };
 
+  const [shared, setShared] = useState(false);
+  const shareApp = async () => {
+    const url = window.location.origin;
+    const shareData = {
+      title: "ПтичкаMax",
+      text: "Заходи в ПтичкаMax — общение с друзьями: чаты, звонки, лента и сообщества!",
+      url,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch {
+      /* пользователь отменил — ничего не делаем */
+    }
+  };
+
   if (loading || !profile) {
     return (
       <div className="flex flex-col h-screen w-screen bg-mesh font-rubik">
@@ -244,6 +265,22 @@ export default function Profile() {
                   <button onClick={() => setShowIosHint(false)} className="text-violet-300 text-xs mt-1">Понятно</button>
                 </div>
               )}
+
+              <button
+                onClick={shareApp}
+                className="w-full glass-strong rounded-2xl p-4 flex items-center gap-3 hover:bg-white/5 transition text-left"
+              >
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-400 flex items-center justify-center">
+                  <Icon name="Share2" size={20} className="text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-white/50 text-[11px]">Пригласить друзей</p>
+                  <p className="text-white font-golos font-bold text-base">
+                    {shared ? "Ссылка скопирована!" : "Поделиться приложением"}
+                  </p>
+                </div>
+                <Icon name={shared ? "Check" : "ChevronRight"} size={18} className="text-white/30" />
+              </button>
             </>
           )}
 
