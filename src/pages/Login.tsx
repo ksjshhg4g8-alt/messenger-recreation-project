@@ -37,7 +37,15 @@ export default function Login() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    if (res.status === 402) {
+      return { ok: false, data: { error: "Сервис временно недоступен. Попробуйте позже." } };
+    }
+    let data: { error?: string; [k: string]: unknown } = {};
+    try {
+      data = await res.json();
+    } catch {
+      data = { error: "Сервер сейчас недоступен. Попробуйте позже." };
+    }
     return { ok: res.ok, data };
   };
 
@@ -56,7 +64,11 @@ export default function Login() {
       }
       saveAndGo(data);
     } catch {
-      setError("Сеть недоступна");
+      setError(
+        !navigator.onLine
+          ? "Нет подключения к интернету. Проверьте сеть и повторите."
+          : "Не удалось связаться с сервером. Нажмите «Повторить»."
+      );
     } finally {
       setLoading(false);
     }
@@ -74,7 +86,11 @@ export default function Login() {
       setRecFoundQuestion(data.question);
       setRecStep(2);
     } catch {
-      setError("Сеть недоступна");
+      setError(
+        !navigator.onLine
+          ? "Нет подключения к интернету. Проверьте сеть и повторите."
+          : "Не удалось связаться с сервером. Нажмите «Повторить»."
+      );
     } finally {
       setLoading(false);
     }
@@ -95,7 +111,11 @@ export default function Login() {
       }
       saveAndGo(data);
     } catch {
-      setError("Сеть недоступна");
+      setError(
+        !navigator.onLine
+          ? "Нет подключения к интернету. Проверьте сеть и повторите."
+          : "Не удалось связаться с сервером. Нажмите «Повторить»."
+      );
     } finally {
       setLoading(false);
     }
@@ -308,7 +328,27 @@ export default function Login() {
           )}
 
           {error && (
-            <div className="text-xs text-red-400 text-center bg-red-500/10 rounded-xl p-3">{error}</div>
+            <div className="space-y-2 bg-red-500/10 rounded-xl p-3">
+              <div className="text-xs text-red-400 text-center">{error}</div>
+              {/(сервер|интернет|сеть|позже)/i.test(error) && (
+                <button
+                  onClick={() => {
+                    if (mode !== "recover") {
+                      submit();
+                    } else if (recStep === 1) {
+                      recoverFindQuestion();
+                    } else {
+                      recoverReset();
+                    }
+                  }}
+                  disabled={loading}
+                  className="w-full h-9 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition"
+                >
+                  <Icon name="RefreshCw" size={14} className={loading ? "animate-spin" : ""} />
+                  Повторить
+                </button>
+              )}
+            </div>
           )}
 
           <p className="text-[11px] text-white/30 text-center leading-relaxed">
