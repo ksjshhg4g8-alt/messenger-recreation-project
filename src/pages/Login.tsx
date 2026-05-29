@@ -1,87 +1,55 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 
-const VK_AUTH_URL = "https://functions.poehali.dev/a86a2e10-be82-4415-81cd-9887738a3175";
-
-function base64url(bytes: Uint8Array) {
-  let str = "";
-  bytes.forEach((b) => (str += String.fromCharCode(b)));
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function sha256(input: string) {
-  const data = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return base64url(new Uint8Array(hash));
-}
-
-function randomString(len = 64) {
-  const bytes = new Uint8Array(len);
-  crypto.getRandomValues(bytes);
-  return base64url(bytes);
-}
+const MAX_AUTH_URL = "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88";
 
 export default function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState("");
-
-  const redirectUri = `${window.location.origin}/login`;
+  const [link, setLink] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (localStorage.getItem("auth_token")) {
-      navigate("/");
-      return;
-    }
-    const params = new URLSearchParams(window.location.search);
-    const vkError = params.get("error");
-    const vkErrorDesc = params.get("error_description");
-    if (vkError) {
-      setError(`VK: ${vkErrorDesc || vkError}`);
-      window.history.replaceState({}, "", "/login");
-      return;
-    }
-    const code = params.get("code");
-    const deviceId = params.get("device_id");
-    const returnedState = params.get("state");
-    if (code && deviceId) {
-      handleCallback(code, deviceId, returnedState || "");
-    }
+    if (localStorage.getItem("auth_token")) navigate("/");
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [navigate]);
 
-  const handleCallback = async (code: string, deviceId: string, returnedState: string) => {
-    setLoading(true);
+  const finishLogin = (data: { token: string; user: unknown }) => {
+    localStorage.setItem("auth_token", data.token);
+    localStorage.setItem("auth_user", JSON.stringify(data.user));
+    if (pollRef.current) clearInterval(pollRef.current);
+    navigate("/");
+  };
+
+  const startMaxLogin = async () => {
     setError("");
+    setLoading(true);
     try {
-      const savedState = sessionStorage.getItem("vk_state");
-      const codeVerifier = sessionStorage.getItem("vk_code_verifier") || "";
-      if (savedState && returnedState && savedState !== returnedState) {
-        setError("Ошибка проверки безопасности. Попробуй ещё раз.");
-        return;
-      }
-      const res = await fetch(`${VK_AUTH_URL}?action=callback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          device_id: deviceId,
-          code_verifier: codeVerifier,
-          redirect_uri: redirectUri,
-        }),
-      });
+      const res = await fetch(`${MAX_AUTH_URL}?action=start`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Не удалось войти через VK");
-        window.history.replaceState({}, "", "/login");
+        setError(data.error || "Вход через MAX недоступен");
         return;
       }
-      localStorage.setItem("auth_token", data.token);
-      localStorage.setItem("auth_user", JSON.stringify(data.user));
-      sessionStorage.removeItem("vk_state");
-      sessionStorage.removeItem("vk_code_verifier");
-      navigate("/");
+      setLink(data.link);
+      setWaiting(true);
+      if (data.link) window.open(data.link, "_blank");
+
+      pollRef.current = setInterval(async () => {
+        try {
+          const pr = await fetch(`${MAX_AUTH_URL}?action=poll&payload=${encodeURIComponent(data.payload)}`);
+          const pd = await pr.json();
+          if (pd.status === "confirmed" && pd.token) finishLogin(pd);
+        } catch {
+          /* keep polling */
+        }
+      }, 2500);
     } catch {
       setError("Сеть недоступна");
     } finally {
@@ -89,37 +57,10 @@ export default function Login() {
     }
   };
 
-  const loginWithVK = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      const cfg = await fetch(`${VK_AUTH_URL}?action=config`).then((r) => r.json());
-      const clientId = cfg.client_id;
-      if (!clientId) {
-        setError("Вход через VK ещё не настроен");
-        setLoading(false);
-        return;
-      }
-      const codeVerifier = randomString(64);
-      const codeChallenge = await sha256(codeVerifier);
-      const state = randomString(16);
-      sessionStorage.setItem("vk_code_verifier", codeVerifier);
-      sessionStorage.setItem("vk_state", state);
-
-      const params = new URLSearchParams({
-        response_type: "code",
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        state,
-        code_challenge: codeChallenge,
-        code_challenge_method: "s256",
-        scope: "email",
-      });
-      window.location.href = `https://id.vk.com/authorize?${params.toString()}`;
-    } catch {
-      setError("Не удалось начать вход через VK");
-      setLoading(false);
-    }
+  const cancelWaiting = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setWaiting(false);
+    setLink("");
   };
 
   return (
@@ -132,24 +73,48 @@ export default function Login() {
             </div>
             <div className="text-center">
               <h1 className="font-golos font-black text-3xl gradient-text mb-1">Vibe Messenger</h1>
-              <p className="text-white/50 text-sm">Войди через ВКонтакте</p>
+              <p className="text-white/50 text-sm">Войди через мессенджер MAX</p>
             </div>
           </div>
 
-          <Button
-            onClick={loginWithVK}
-            disabled={loading}
-            className="w-full h-14 rounded-2xl bg-[#0077FF] hover:bg-[#0066DD] text-white font-bold text-base flex items-center justify-center gap-3"
-          >
-            {loading ? (
-              <Icon name="Loader" size={22} className="animate-spin" />
-            ) : (
-              <>
-                <Icon name="AtSign" size={22} />
-                Войти через VK ID
-              </>
-            )}
-          </Button>
+          {!waiting ? (
+            <Button
+              onClick={startMaxLogin}
+              disabled={loading}
+              className="w-full h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 hover:opacity-90 text-white font-bold text-base flex items-center justify-center gap-3"
+            >
+              {loading ? (
+                <Icon name="Loader" size={22} className="animate-spin" />
+              ) : (
+                <>
+                  <Icon name="Send" size={22} />
+                  Войти через MAX
+                </>
+              )}
+            </Button>
+          ) : (
+            <div className="space-y-4 text-center">
+              <div className="flex flex-col items-center gap-3 bg-white/5 rounded-2xl p-6">
+                <Icon name="Loader" size={32} className="animate-spin text-cyan-300" />
+                <p className="text-white/70 text-sm">
+                  Открой бота в MAX и нажми «Начать». После подтверждения вход произойдёт автоматически.
+                </p>
+                {link && (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-300 hover:text-cyan-200 text-sm font-medium underline"
+                  >
+                    Открыть бота MAX снова
+                  </a>
+                )}
+              </div>
+              <button onClick={cancelWaiting} className="text-white/50 hover:text-white text-xs">
+                Отмена
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="text-xs text-red-400 text-center bg-red-500/10 rounded-xl p-3">{error}</div>
