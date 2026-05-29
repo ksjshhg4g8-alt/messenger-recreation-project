@@ -29,6 +29,7 @@ def handler(event: dict, context) -> dict:
     Социальные функции: лента публикаций, группы/каналы, статусы онлайн, профиль пользователя.
     Действия: feed-list, video-feed, feed-create, feed-like, comments-list, comment-add, comment-delete,
     communities-list, community-create, community-join, community-leave, community-detail,
+    community-posts, community-post-create, community-post-delete, block-toggle, blocks-list,
     status-ping, profile-get, profile-update,
     call-start, call-incoming, call-answer, call-poll, call-end, call-ice-add, call-ice-get.
     '''
@@ -227,7 +228,9 @@ def handler(event: dict, context) -> dict:
                 (uid, target)
             )
             posts = cur.fetchall()
-            return _resp(200, {'user': user, 'posts': posts, 'is_me': int(target) == uid})
+            cur.execute("SELECT 1 FROM user_blocks WHERE blocker_id = %s AND blocked_id = %s", (uid, target))
+            is_blocked = bool(cur.fetchone())
+            return _resp(200, {'user': user, 'posts': posts, 'is_me': int(target) == uid, 'is_blocked': is_blocked})
 
         if action == 'profile-update':
             body = json.loads(event.get('body') or '{}')
@@ -250,6 +253,85 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = %s RETURNING id, name, login, avatar_url, bio, status_text", args)
             return _resp(200, {'user': cur.fetchone()})
 
+        # ===== Посты в сообществах =====
+        if action == 'community-posts':
+            cid = int(params.get('community_id', 0))
+            cur.execute(
+                """
+                SELECT p.id, p.text, p.media_url, p.created_at,
+                       u.id AS author_id, u.name AS author_name, u.avatar_url AS author_avatar
+                FROM community_posts p JOIN users u ON u.id = p.user_id
+                WHERE p.community_id = %s ORDER BY p.created_at DESC LIMIT 100
+                """,
+                (cid,)
+            )
+            return _resp(200, {'posts': cur.fetchall(), 'me': uid})
+
+        if action == 'community-post-create':
+            body = json.loads(event.get('body') or '{}')
+            cid = int(body.get('community_id', 0))
+            text = (body.get('text') or '').strip()
+            media_url = (body.get('media_url') or '').strip() or None
+            if not cid or (not text and not media_url):
+                return _resp(400, {'error': 'Пустая публикация'})
+            cur.execute("SELECT type, owner_id FROM communities WHERE id = %s", (cid,))
+            comm = cur.fetchone()
+            if not comm:
+                return _resp(404, {'error': 'Сообщество не найдено'})
+            cur.execute("SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s", (cid, uid))
+            is_member = cur.fetchone()
+            if comm['type'] == 'channel' and comm['owner_id'] != uid:
+                return _resp(403, {'error': 'В канале публиковать может только владелец'})
+            if not is_member:
+                return _resp(403, {'error': 'Сначала вступите в сообщество'})
+            cur.execute(
+                "INSERT INTO community_posts (community_id, user_id, text, media_url) VALUES (%s, %s, %s, %s) RETURNING id, created_at",
+                (cid, uid, text or None, media_url)
+            )
+            row = cur.fetchone()
+            return _resp(200, {'id': row['id'], 'created_at': row['created_at']})
+
+        if action == 'community-post-delete':
+            body = json.loads(event.get('body') or '{}')
+            pid = int(body.get('post_id', 0))
+            cur.execute(
+                """
+                SELECT p.user_id, c.owner_id FROM community_posts p
+                JOIN communities c ON c.id = p.community_id WHERE p.id = %s
+                """,
+                (pid,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return _resp(404, {'error': 'Пост не найден'})
+            if row['user_id'] != uid and row['owner_id'] != uid:
+                return _resp(403, {'error': 'Нет прав на удаление'})
+            cur.execute("DELETE FROM community_posts WHERE id = %s", (pid,))
+            return _resp(200, {'ok': True})
+
+        # ===== Блокировка пользователей =====
+        if action == 'block-toggle':
+            body = json.loads(event.get('body') or '{}')
+            target = int(body.get('user_id', 0))
+            if target == uid:
+                return _resp(400, {'error': 'Нельзя заблокировать себя'})
+            cur.execute("SELECT 1 FROM user_blocks WHERE blocker_id = %s AND blocked_id = %s", (uid, target))
+            if cur.fetchone():
+                cur.execute("DELETE FROM user_blocks WHERE blocker_id = %s AND blocked_id = %s", (uid, target))
+                return _resp(200, {'blocked': False})
+            cur.execute("INSERT INTO user_blocks (blocker_id, blocked_id) VALUES (%s, %s)", (uid, target))
+            return _resp(200, {'blocked': True})
+
+        if action == 'blocks-list':
+            cur.execute(
+                """
+                SELECT u.id, u.name, u.avatar_url FROM user_blocks b
+                JOIN users u ON u.id = b.blocked_id WHERE b.blocker_id = %s ORDER BY b.created_at DESC
+                """,
+                (uid,)
+            )
+            return _resp(200, {'blocked': cur.fetchall()})
+
         # ===== WebRTC звонки (сигналинг через polling) =====
         if action == 'call-start':
             body = json.loads(event.get('body') or '{}')
@@ -258,6 +340,12 @@ def handler(event: dict, context) -> dict:
             offer = body.get('offer_sdp') or ''
             if not callee_id or not offer:
                 return _resp(400, {'error': 'Нет данных звонка'})
+            cur.execute(
+                "SELECT 1 FROM user_blocks WHERE (blocker_id = %s AND blocked_id = %s) OR (blocker_id = %s AND blocked_id = %s)",
+                (uid, callee_id, callee_id, uid)
+            )
+            if cur.fetchone():
+                return _resp(403, {'error': 'Звонок недоступен'})
             cur.execute("UPDATE calls SET status = 'ended' WHERE (caller_id = %s OR callee_id = %s) AND status IN ('ringing', 'active')", (uid, uid))
             cur.execute(
                 "INSERT INTO calls (caller_id, callee_id, call_type, status, offer_sdp) VALUES (%s, %s, %s, 'ringing', %s) RETURNING id",

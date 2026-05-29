@@ -129,14 +129,16 @@ export default function Communities() {
           ) : (
             list.map((c) => (
               <div key={c.id} className="glass-strong rounded-2xl p-4 flex items-center gap-3 animate-slide-up">
-                <Avatar name={c.title} url={c.avatar_url} seed={c.id} size={48} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium truncate">{c.title}</p>
-                  <p className="text-white/40 text-xs">
-                    {c.members} {c.members === 1 ? "участник" : "участников"}
-                  </p>
-                  {c.description && <p className="text-white/50 text-xs truncate mt-0.5">{c.description}</p>}
-                </div>
+                <button onClick={() => navigate(`/communities/${c.id}`)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <Avatar name={c.title} url={c.avatar_url} seed={c.id} size={48} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-medium truncate">{c.title}</p>
+                    <p className="text-white/40 text-xs">
+                      {c.members} {c.members === 1 ? "участник" : "участников"}
+                    </p>
+                    {c.description && <p className="text-white/50 text-xs truncate mt-0.5">{c.description}</p>}
+                  </div>
+                </button>
                 <Button
                   onClick={() => toggleJoin(c)}
                   className={`rounded-xl h-9 px-4 text-sm font-medium ${

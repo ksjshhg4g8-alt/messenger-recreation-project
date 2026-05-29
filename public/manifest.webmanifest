@@ -1,0 +1,26 @@
+{
+  "name": "Птичка — общение с друзьями",
+  "short_name": "Птичка",
+  "description": "Новая платформа общения в России: чаты, звонки, лента и сообщества",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0814",
+  "theme_color": "#8b5cf6",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "https://cdn.poehali.dev/projects/9a4373e4-9068-44b0-bfbe-3a2390a044fe/files/366681ce-7a5f-41ed-abff-f9f5ee26de5f.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn.poehali.dev/projects/9a4373e4-9068-44b0-bfbe-3a2390a044fe/files/366681ce-7a5f-41ed-abff-f9f5ee26de5f.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

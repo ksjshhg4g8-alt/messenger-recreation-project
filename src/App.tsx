@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Feed from "./pages/Feed";
 import Communities from "./pages/Communities";
+import CommunityPage from "./pages/CommunityPage";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import IncomingCallWatcher from "./components/messenger/IncomingCallWatcher";
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/communities" element={<Communities />} />
+          <Route path="/communities/:id" element={<CommunityPage />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/:id" element={<Profile />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

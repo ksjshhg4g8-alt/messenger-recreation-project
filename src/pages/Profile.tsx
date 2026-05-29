@@ -14,6 +14,7 @@ export default function Profile() {
   const [profile, setProfile] = useState<ProfileType | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [isMe, setIsMe] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: "", bio: "", status_text: "" });
@@ -26,6 +27,7 @@ export default function Profile() {
       setProfile(res.user);
       setPosts(res.posts);
       setIsMe(res.is_me);
+      setBlocked(res.is_blocked);
       setForm({
         name: res.user.name || "",
         bio: res.user.bio || "",
@@ -74,6 +76,32 @@ export default function Profile() {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
     navigate("/login");
+  };
+
+  const toggleBlock = async () => {
+    if (!profile) return;
+    const res = await api.blockToggle(profile.id);
+    setBlocked(res.blocked);
+  };
+
+  const [installPrompt, setInstallPrompt] = useState<{ prompt: () => void } | null>(null);
+  const [showIosHint, setShowIosHint] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as unknown as { prompt: () => void });
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const installApp = () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      return;
+    }
+    setShowIosHint(true);
   };
 
   if (loading || !profile) {
@@ -166,36 +194,57 @@ export default function Profile() {
                     <Icon name="Pencil" size={15} className="mr-2" /> Редактировать
                   </Button>
                 ) : (
-                  <Button
-                    onClick={async () => {
-                      const res = await api.createChat({ type: "private", user_id: profile.id });
-                      navigate("/");
-                      void res;
-                    }}
-                    className="mt-4 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 hover:opacity-90 px-6"
-                  >
-                    <Icon name="MessageCircle" size={15} className="mr-2" /> Написать
-                  </Button>
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      onClick={async () => {
+                        await api.createChat({ type: "private", user_id: profile.id });
+                        navigate("/");
+                      }}
+                      disabled={blocked}
+                      className="h-10 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 hover:opacity-90 px-6 disabled:opacity-40"
+                    >
+                      <Icon name="MessageCircle" size={15} className="mr-2" /> Написать
+                    </Button>
+                    <Button
+                      onClick={toggleBlock}
+                      className={`h-10 rounded-xl px-5 ${blocked ? "bg-red-500/20 text-red-300 hover:bg-red-500/30" : "bg-white/10 hover:bg-white/15 text-white/70"}`}
+                    >
+                      <Icon name={blocked ? "UserCheck" : "UserX"} size={15} className="mr-2" />
+                      {blocked ? "Разблокировать" : "Заблокировать"}
+                    </Button>
+                  </div>
                 )}
               </>
             )}
           </div>
 
           {isMe && (
-            <a
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              className="glass-strong rounded-2xl p-4 flex items-center gap-3 hover:bg-white/5 transition"
-            >
-              <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center">
-                <Icon name="Apple" size={24} className="text-white" fallback="Smartphone" />
-              </div>
-              <div className="flex-1">
-                <p className="text-white/50 text-[11px]">Загрузите в</p>
-                <p className="text-white font-golos font-bold text-base">App Store</p>
-              </div>
-              <Icon name="ChevronRight" size={18} className="text-white/30" />
-            </a>
+            <>
+              <button
+                onClick={installApp}
+                className="w-full glass-strong rounded-2xl p-4 flex items-center gap-3 hover:bg-white/5 transition text-left"
+              >
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center">
+                  <Icon name="Download" size={22} className="text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-white/50 text-[11px]">Установить на телефон</p>
+                  <p className="text-white font-golos font-bold text-base">Установить приложение</p>
+                </div>
+                <Icon name="ChevronRight" size={18} className="text-white/30" />
+              </button>
+
+              {showIosHint && (
+                <div className="glass-strong rounded-2xl p-4 space-y-2 text-sm text-white/70 animate-slide-up">
+                  <p className="text-white font-medium flex items-center gap-2">
+                    <Icon name="Smartphone" size={16} /> Как установить
+                  </p>
+                  <p><b>iPhone:</b> нажмите «Поделиться» <Icon name="Share" size={13} className="inline" /> внизу браузера → «На экран Домой».</p>
+                  <p><b>Android:</b> меню браузера ⋮ → «Установить приложение» / «Добавить на главный экран».</p>
+                  <button onClick={() => setShowIosHint(false)} className="text-violet-300 text-xs mt-1">Понятно</button>
+                </div>
+              )}
+            </>
           )}
 
           {posts.length > 0 && (

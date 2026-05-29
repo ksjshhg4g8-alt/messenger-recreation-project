@@ -4,7 +4,6 @@ import { api, fileToBase64 } from "@/lib/api";
 
 const EMOJIS = ["😀","😂","😍","🥰","😎","🤔","😭","😡","👍","🙏","🔥","❤️","🎉","💯","👏","🙌","🤣","😅","😉","😴","🤗","😱","🥳","😇","🤩","😋","🫶","💔","✨","⭐"];
 const STICKERS = ["🐶","🐱","🦄","🐼","🦊","🐸","🐵","🦁","🐯","🐨","🐰","🐻","🐹","🐧","🦋"];
-const GIFTS = ["🎁","💐","🌹","🍰","🎂","🧸","💎","🏆","👑","🍾","🎈","💝"];
 
 interface EditTarget {
   id: number;
@@ -18,7 +17,7 @@ interface MessageInputProps {
   onCancelEdit?: () => void;
 }
 
-type Panel = "none" | "emoji" | "sticker" | "gift" | "attach";
+type Panel = "none" | "emoji" | "sticker" | "attach";
 
 export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: MessageInputProps) {
   const [text, setText] = useState("");
@@ -134,9 +133,6 @@ export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: 
       {panel === "sticker" && (
         <Grid big items={STICKERS} onPick={(s) => { send({ chat_id: chatId, type: "sticker", text: s }); setPanel("none"); }} />
       )}
-      {panel === "gift" && (
-        <Grid big items={GIFTS} onPick={(g) => { send({ chat_id: chatId, type: "gift", text: g }); setPanel("none"); }} />
-      )}
       {panel === "attach" && (
         <div className="flex gap-3 p-4">
           <AttachBtn icon="Image" label="Фото" color="from-violet-500 to-cyan-400" onClick={() => photoRef.current?.click()} />
@@ -176,13 +172,6 @@ export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: 
           title="Стикеры"
         >
           <Icon name="Sticker" size={20} />
-        </button>
-        <button
-          onClick={() => setPanel((p) => (p === "gift" ? "none" : "gift"))}
-          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition"
-          title="Подарок"
-        >
-          <Icon name="Gift" size={20} />
         </button>
 
         <div className="flex-1 flex items-end bg-white/5 border border-white/10 rounded-2xl px-3">

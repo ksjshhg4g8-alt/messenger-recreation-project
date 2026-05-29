@@ -126,6 +126,22 @@ export interface Profile {
   posts_count: number;
 }
 
+export interface CommunityPost {
+  id: number;
+  text: string | null;
+  media_url: string | null;
+  created_at: string;
+  author_id: number;
+  author_name: string;
+  author_avatar: string | null;
+}
+
+export interface BlockedUser {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+}
+
 export const api = {
   listChats: (): Promise<{ chats: Chat[] }> =>
     req(`${CHATS_URL}?action=list-chats`, "GET"),
@@ -210,8 +226,26 @@ export const api = {
   communityLeave: (id: number): Promise<{ ok: boolean; joined: boolean }> =>
     req(`${SOCIAL_URL}?action=community-leave`, "POST", { community_id: id }),
 
-  profileGet: (userId?: number): Promise<{ user: Profile; posts: Post[]; is_me: boolean }> =>
+  profileGet: (userId?: number): Promise<{ user: Profile; posts: Post[]; is_me: boolean; is_blocked: boolean }> =>
     req(`${SOCIAL_URL}?action=profile-get${userId ? `&user_id=${userId}` : ""}`, "GET"),
+
+  communityPosts: (communityId: number): Promise<{ posts: CommunityPost[]; me: number }> =>
+    req(`${SOCIAL_URL}?action=community-posts&community_id=${communityId}`, "GET"),
+
+  communityPostCreate: (payload: { community_id: number; text?: string; media_url?: string }): Promise<{ id: number; created_at: string }> =>
+    req(`${SOCIAL_URL}?action=community-post-create`, "POST", payload),
+
+  communityPostDelete: (postId: number): Promise<{ ok: boolean }> =>
+    req(`${SOCIAL_URL}?action=community-post-delete`, "POST", { post_id: postId }),
+
+  communityDetail: (id: number): Promise<{ community: Community }> =>
+    req(`${SOCIAL_URL}?action=community-detail&id=${id}`, "GET"),
+
+  blockToggle: (userId: number): Promise<{ blocked: boolean }> =>
+    req(`${SOCIAL_URL}?action=block-toggle`, "POST", { user_id: userId }),
+
+  blocksList: (): Promise<{ blocked: BlockedUser[] }> =>
+    req(`${SOCIAL_URL}?action=blocks-list`, "GET"),
 
   profileUpdate: (payload: {
     name?: string;
