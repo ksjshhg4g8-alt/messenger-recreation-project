@@ -1,0 +1,212 @@
+import json
+import os
+import psycopg2
+import psycopg2.extras
+
+def _cors():
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Auth-Token',
+        'Content-Type': 'application/json'
+    }
+
+def _resp(status, body):
+    return {'statusCode': status, 'headers': _cors(), 'isBase64Encoded': False, 'body': json.dumps(body, default=str)}
+
+def _uid_from_token(event):
+    headers = event.get('headers') or {}
+    token = headers.get('X-Auth-Token') or headers.get('x-auth-token') or ''
+    if ':' not in token:
+        return None
+    try:
+        return int(token.rsplit(':', 1)[1])
+    except Exception:
+        return None
+
+def handler(event: dict, context) -> dict:
+    '''
+    Социальные функции: лента публикаций, группы/каналы, статусы онлайн, профиль пользователя.
+    Действия: feed-list, feed-create, feed-like, communities-list, community-create,
+    community-join, community-leave, community-detail, status-ping, profile-get, profile-update.
+    '''
+    if event.get('httpMethod') == 'OPTIONS':
+        return {'statusCode': 200, 'headers': _cors(), 'body': ''}
+
+    params = event.get('queryStringParameters') or {}
+    action = params.get('action', '')
+    uid = _uid_from_token(event)
+    if not uid:
+        return _resp(401, {'error': 'Не авторизован'})
+
+    dsn = os.environ['DATABASE_URL']
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    try:
+        # обновляем онлайн при любом запросе
+        cur.execute("UPDATE users SET is_online = TRUE, last_seen_at = NOW() WHERE id = %s", (uid,))
+
+        if action == 'status-ping':
+            return _resp(200, {'ok': True})
+
+        if action == 'feed-list':
+            cur.execute(
+                """
+                SELECT p.id, p.text, p.media_url, p.created_at,
+                       u.id AS author_id, u.name AS author_name, u.avatar_url AS author_avatar,
+                       (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS likes,
+                       EXISTS(SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = %s) AS liked
+                FROM posts p
+                JOIN users u ON u.id = p.user_id
+                ORDER BY p.created_at DESC
+                LIMIT 100
+                """,
+                (uid,)
+            )
+            return _resp(200, {'posts': cur.fetchall(), 'me': uid})
+
+        if action == 'feed-create':
+            body = json.loads(event.get('body') or '{}')
+            text = (body.get('text') or '').strip()
+            media_url = (body.get('media_url') or '').strip() or None
+            if not text and not media_url:
+                return _resp(400, {'error': 'Пустая публикация'})
+            cur.execute(
+                "INSERT INTO posts (user_id, text, media_url) VALUES (%s, %s, %s) RETURNING id, created_at",
+                (uid, text or None, media_url)
+            )
+            row = cur.fetchone()
+            return _resp(200, {'id': row['id'], 'created_at': row['created_at']})
+
+        if action == 'feed-like':
+            body = json.loads(event.get('body') or '{}')
+            post_id = body.get('post_id')
+            if not post_id:
+                return _resp(400, {'error': 'Нет публикации'})
+            cur.execute("SELECT 1 FROM post_likes WHERE post_id = %s AND user_id = %s", (post_id, uid))
+            if cur.fetchone():
+                cur.execute("DELETE FROM post_likes WHERE post_id = %s AND user_id = %s", (post_id, uid))
+                liked = False
+            else:
+                cur.execute("INSERT INTO post_likes (post_id, user_id) VALUES (%s, %s)", (post_id, uid))
+                liked = True
+            cur.execute("SELECT COUNT(*) AS c FROM post_likes WHERE post_id = %s", (post_id,))
+            return _resp(200, {'liked': liked, 'likes': cur.fetchone()['c']})
+
+        if action == 'communities-list':
+            ctype = params.get('type', '')
+            where = "WHERE c.type = %s" if ctype in ('group', 'channel') else ""
+            args = (uid,) + ((ctype,) if where else ())
+            cur.execute(
+                f"""
+                SELECT c.id, c.type, c.title, c.description, c.avatar_url, c.owner_id,
+                       (SELECT COUNT(*) FROM community_members cm WHERE cm.community_id = c.id) AS members,
+                       EXISTS(SELECT 1 FROM community_members cm WHERE cm.community_id = c.id AND cm.user_id = %s) AS joined
+                FROM communities c
+                {where}
+                ORDER BY members DESC, c.created_at DESC
+                LIMIT 100
+                """,
+                args
+            )
+            return _resp(200, {'communities': cur.fetchall()})
+
+        if action == 'community-create':
+            body = json.loads(event.get('body') or '{}')
+            title = (body.get('title') or '').strip()
+            ctype = body.get('type') if body.get('type') in ('group', 'channel') else 'group'
+            description = (body.get('description') or '').strip() or None
+            avatar_url = (body.get('avatar_url') or '').strip() or None
+            if len(title) < 2:
+                return _resp(400, {'error': 'Название минимум 2 символа'})
+            cur.execute(
+                "INSERT INTO communities (type, title, description, avatar_url, owner_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                (ctype, title, description, avatar_url, uid)
+            )
+            cid = cur.fetchone()['id']
+            cur.execute("INSERT INTO community_members (community_id, user_id) VALUES (%s, %s)", (cid, uid))
+            return _resp(200, {'id': cid})
+
+        if action == 'community-join':
+            body = json.loads(event.get('body') or '{}')
+            cid = body.get('community_id')
+            cur.execute(
+                "INSERT INTO community_members (community_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (cid, uid)
+            )
+            return _resp(200, {'ok': True, 'joined': True})
+
+        if action == 'community-leave':
+            body = json.loads(event.get('body') or '{}')
+            cid = body.get('community_id')
+            cur.execute("DELETE FROM community_members WHERE community_id = %s AND user_id = %s", (cid, uid))
+            return _resp(200, {'ok': True, 'joined': False})
+
+        if action == 'community-detail':
+            cid = params.get('id')
+            cur.execute(
+                """
+                SELECT c.id, c.type, c.title, c.description, c.avatar_url, c.owner_id, c.created_at,
+                       (SELECT COUNT(*) FROM community_members cm WHERE cm.community_id = c.id) AS members,
+                       EXISTS(SELECT 1 FROM community_members cm WHERE cm.community_id = c.id AND cm.user_id = %s) AS joined
+                FROM communities c WHERE c.id = %s
+                """,
+                (uid, cid)
+            )
+            row = cur.fetchone()
+            if not row:
+                return _resp(404, {'error': 'Сообщество не найдено'})
+            return _resp(200, {'community': row})
+
+        if action == 'profile-get':
+            target = params.get('user_id') or uid
+            cur.execute(
+                """
+                SELECT id, name, login, avatar_url, bio, status_text, is_online, last_seen_at,
+                       (SELECT COUNT(*) FROM posts p WHERE p.user_id = users.id) AS posts_count
+                FROM users WHERE id = %s
+                """,
+                (target,)
+            )
+            user = cur.fetchone()
+            if not user:
+                return _resp(404, {'error': 'Пользователь не найден'})
+            cur.execute(
+                """
+                SELECT p.id, p.text, p.media_url, p.created_at,
+                       (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS likes,
+                       EXISTS(SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = %s) AS liked
+                FROM posts p WHERE p.user_id = %s ORDER BY p.created_at DESC LIMIT 50
+                """,
+                (uid, target)
+            )
+            posts = cur.fetchall()
+            return _resp(200, {'user': user, 'posts': posts, 'is_me': int(target) == uid})
+
+        if action == 'profile-update':
+            body = json.loads(event.get('body') or '{}')
+            name = (body.get('name') or '').strip()
+            bio = (body.get('bio') or '').strip()
+            status_text = (body.get('status_text') or '').strip()
+            avatar_url = (body.get('avatar_url') or '').strip()
+            sets, args = [], []
+            if name:
+                sets.append("name = %s"); args.append(name)
+            if 'bio' in body:
+                sets.append("bio = %s"); args.append(bio or None)
+            if 'status_text' in body:
+                sets.append("status_text = %s"); args.append(status_text or None)
+            if avatar_url:
+                sets.append("avatar_url = %s"); args.append(avatar_url)
+            if not sets:
+                return _resp(400, {'error': 'Нет данных для обновления'})
+            args.append(uid)
+            cur.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = %s RETURNING id, name, login, avatar_url, bio, status_text", args)
+            return _resp(200, {'user': cur.fetchone()})
+
+        return _resp(400, {'error': 'Неизвестное действие'})
+    finally:
+        cur.close()
+        conn.close()

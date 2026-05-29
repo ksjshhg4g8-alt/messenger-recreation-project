@@ -34,6 +34,18 @@ export function formatTime(iso: string | null): string {
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 }
 
+export function lastSeen(iso: string | null, online?: boolean): string {
+  if (online) return "в сети";
+  if (!iso) return "был(а) давно";
+  const d = new Date(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z"));
+  if (isNaN(d.getTime())) return "был(а) недавно";
+  const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diff < 60) return "только что";
+  if (diff < 3600) return `был(а) ${Math.floor(diff / 60)} мин назад`;
+  if (diff < 86400) return `был(а) ${Math.floor(diff / 3600)} ч назад`;
+  return `был(а) ${d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}`;
+}
+
 export function previewText(type: string | null, text: string | null): string {
   if (type === "image") return "📷 Фото";
   if (type === "video") return "🎬 Видео";

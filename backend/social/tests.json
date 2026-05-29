@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "No token returns 401",
+      "method": "GET",
+      "path": "/?action=feed-list",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Unknown action with fake token returns 401",
+      "method": "GET",
+      "path": "/?action=unknown",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

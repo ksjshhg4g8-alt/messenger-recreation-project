@@ -2,6 +2,7 @@ const CHATS_URL = "https://functions.poehali.dev/056b4c53-e701-4434-85b9-7ae146e
 const MEDIA_URL = "https://functions.poehali.dev/6cc8c85a-b5e1-404b-ab3e-315b58940f51";
 const STORIES_URL = "https://functions.poehali.dev/fe54577c-6c23-457c-934b-948b3402a10c";
 const AUTH_URL = "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88";
+const SOCIAL_URL = "https://functions.poehali.dev/c8953d78-cff5-4acb-afcf-abf723ad4cf4";
 
 function token(): string {
   return localStorage.getItem("auth_token") || "";
@@ -71,6 +72,41 @@ export interface SearchUser {
   avatar_url: string | null;
 }
 
+export interface Post {
+  id: number;
+  text: string | null;
+  media_url: string | null;
+  created_at: string;
+  author_id: number;
+  author_name: string;
+  author_avatar: string | null;
+  likes: number;
+  liked: boolean;
+}
+
+export interface Community {
+  id: number;
+  type: "group" | "channel";
+  title: string;
+  description: string | null;
+  avatar_url: string | null;
+  owner_id: number;
+  members: number;
+  joined: boolean;
+}
+
+export interface Profile {
+  id: number;
+  name: string;
+  login: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  status_text: string | null;
+  is_online: boolean;
+  last_seen_at: string | null;
+  posts_count: number;
+}
+
 export const api = {
   listChats: (): Promise<{ chats: Chat[] }> =>
     req(`${CHATS_URL}?action=list-chats`, "GET"),
@@ -122,6 +158,46 @@ export const api = {
 
   me: (): Promise<{ user: { id: number; phone: string; name: string; avatar_url: string | null } }> =>
     req(`${AUTH_URL}?action=me`, "GET"),
+
+  feedList: (): Promise<{ posts: Post[]; me: number }> =>
+    req(`${SOCIAL_URL}?action=feed-list`, "GET"),
+
+  feedCreate: (payload: { text?: string; media_url?: string }): Promise<{ id: number; created_at: string }> =>
+    req(`${SOCIAL_URL}?action=feed-create`, "POST", payload),
+
+  feedLike: (postId: number): Promise<{ liked: boolean; likes: number }> =>
+    req(`${SOCIAL_URL}?action=feed-like`, "POST", { post_id: postId }),
+
+  communitiesList: (type?: "group" | "channel"): Promise<{ communities: Community[] }> =>
+    req(`${SOCIAL_URL}?action=communities-list${type ? `&type=${type}` : ""}`, "GET"),
+
+  communityCreate: (payload: {
+    type: "group" | "channel";
+    title: string;
+    description?: string;
+    avatar_url?: string;
+  }): Promise<{ id: number }> =>
+    req(`${SOCIAL_URL}?action=community-create`, "POST", payload),
+
+  communityJoin: (id: number): Promise<{ ok: boolean; joined: boolean }> =>
+    req(`${SOCIAL_URL}?action=community-join`, "POST", { community_id: id }),
+
+  communityLeave: (id: number): Promise<{ ok: boolean; joined: boolean }> =>
+    req(`${SOCIAL_URL}?action=community-leave`, "POST", { community_id: id }),
+
+  profileGet: (userId?: number): Promise<{ user: Profile; posts: Post[]; is_me: boolean }> =>
+    req(`${SOCIAL_URL}?action=profile-get${userId ? `&user_id=${userId}` : ""}`, "GET"),
+
+  profileUpdate: (payload: {
+    name?: string;
+    bio?: string;
+    status_text?: string;
+    avatar_url?: string;
+  }): Promise<{ user: Profile }> =>
+    req(`${SOCIAL_URL}?action=profile-update`, "POST", payload),
+
+  statusPing: (): Promise<{ ok: boolean }> =>
+    req(`${SOCIAL_URL}?action=status-ping`, "GET"),
 };
 
 export async function fileToBase64(file: File): Promise<string> {
