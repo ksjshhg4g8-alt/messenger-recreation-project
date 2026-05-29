@@ -1,0 +1,137 @@
+const CHATS_URL = "https://functions.poehali.dev/056b4c53-e701-4434-85b9-7ae146e97dc5";
+const MEDIA_URL = "https://functions.poehali.dev/6cc8c85a-b5e1-404b-ab3e-315b58940f51";
+const STORIES_URL = "https://functions.poehali.dev/fe54577c-6c23-457c-934b-948b3402a10c";
+const AUTH_URL = "https://functions.poehali.dev/5fd254ac-b084-4d77-b335-521d7c4031b2";
+
+function token(): string {
+  return localStorage.getItem("auth_token") || "";
+}
+
+export function getCurrentUser() {
+  try {
+    return JSON.parse(localStorage.getItem("auth_user") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json", "X-Auth-Token": token() };
+}
+
+async function req(url: string, method: string, body?: unknown) {
+  const res = await fetch(url, {
+    method,
+    headers: authHeaders(),
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Ошибка запроса");
+  return data;
+}
+
+export interface Chat {
+  id: number;
+  type: string;
+  title: string;
+  avatar_url: string | null;
+  other_id: number | null;
+  online: boolean;
+  last_text: string | null;
+  last_type: string | null;
+  last_time: string | null;
+  unread: number;
+}
+
+export interface Reaction {
+  emoji: string;
+  user_id: number;
+}
+
+export interface Message {
+  id: number;
+  sender_id: number;
+  type: string;
+  text: string | null;
+  media_url: string | null;
+  media_meta: Record<string, unknown> | null;
+  reply_to: number | null;
+  created_at: string;
+  edited_at: string | null;
+  sender_name: string;
+  sender_avatar: string | null;
+  reactions: Reaction[] | null;
+  read_count: number;
+}
+
+export interface SearchUser {
+  id: number;
+  name: string;
+  phone: string;
+  avatar_url: string | null;
+}
+
+export const api = {
+  listChats: (): Promise<{ chats: Chat[] }> =>
+    req(`${CHATS_URL}?action=list-chats`, "GET"),
+
+  getMessages: (chatId: number): Promise<{ messages: Message[]; me: number }> =>
+    req(`${CHATS_URL}?action=get-messages&chat_id=${chatId}`, "GET"),
+
+  sendMessage: (payload: {
+    chat_id: number;
+    type?: string;
+    text?: string;
+    media_url?: string;
+    media_meta?: Record<string, unknown>;
+    reply_to?: number;
+  }): Promise<{ id: number; created_at: string }> =>
+    req(`${CHATS_URL}?action=send-message`, "POST", payload),
+
+  createChat: (payload: {
+    type: string;
+    user_id?: number;
+    title?: string;
+    members?: number[];
+  }): Promise<{ chat_id: number; existing: boolean }> =>
+    req(`${CHATS_URL}?action=create-chat`, "POST", payload),
+
+  searchUsers: (q: string): Promise<{ users: SearchUser[] }> =>
+    req(`${CHATS_URL}?action=search-users&q=${encodeURIComponent(q)}`, "GET"),
+
+  markRead: (chatId: number, lastId: number): Promise<{ ok: boolean }> =>
+    req(`${CHATS_URL}?action=mark-read`, "POST", { chat_id: chatId, last_message_id: lastId }),
+
+  react: (messageId: number, emoji: string): Promise<{ ok: boolean }> =>
+    req(`${CHATS_URL}?action=react`, "POST", { message_id: messageId, emoji }),
+
+  uploadMedia: (data: string, contentType: string, folder = "media"): Promise<{ url: string; size: number }> =>
+    req(`${MEDIA_URL}`, "POST", { data, content_type: contentType, folder }),
+
+  listStories: (): Promise<{ stories: unknown[]; me: number }> =>
+    req(`${STORIES_URL}?action=list`, "GET"),
+
+  userStories: (userId: number): Promise<{ items: unknown[] }> =>
+    req(`${STORIES_URL}?action=user-stories&user_id=${userId}`, "GET"),
+
+  createStory: (payload: { type?: string; media_url?: string; caption?: string; bg_color?: string }): Promise<{ id: number }> =>
+    req(`${STORIES_URL}?action=create`, "POST", payload),
+
+  viewStory: (storyId: number): Promise<{ ok: boolean }> =>
+    req(`${STORIES_URL}?action=view`, "POST", { story_id: storyId }),
+
+  me: (): Promise<{ user: { id: number; phone: string; name: string; avatar_url: string | null } }> =>
+    req(`${AUTH_URL}?action=me`, "GET"),
+};
+
+export async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}

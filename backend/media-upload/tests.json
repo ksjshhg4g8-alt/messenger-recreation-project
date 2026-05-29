@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "No auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"data": "abc"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "No data",
+      "method": "POST",
+      "path": "/",
+      "headers": {"X-Auth-Token": "abc:1"},
+      "body": {},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

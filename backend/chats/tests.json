@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "No auth",
+      "method": "GET",
+      "path": "/?action=list-chats",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Unknown action with fake token",
+      "method": "GET",
+      "path": "/?action=unknown",
+      "headers": {"X-Auth-Token": "abc:999999"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

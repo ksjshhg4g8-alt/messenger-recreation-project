@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "No auth",
+      "method": "GET",
+      "path": "/?action=list",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Unknown action",
+      "method": "GET",
+      "path": "/?action=unknown",
+      "headers": {"X-Auth-Token": "abc:1"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
