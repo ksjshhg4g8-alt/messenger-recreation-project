@@ -84,7 +84,7 @@ export default function Index() {
               <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-violet-500/20 to-cyan-400/20 flex items-center justify-center mb-4">
                 <Icon name="MessageCircle" size={48} className="text-violet-400/60" />
               </div>
-              <h2 className="font-golos font-bold text-xl text-white/70 mb-1">Vibe Messenger</h2>
+              <h2 className="font-golos font-bold text-xl text-white/70 mb-1">ПтичкаMax</h2>
               <p className="text-sm">Выбери чат, чтобы начать общение</p>
             </div>
           )}
