@@ -36,6 +36,13 @@ export default function Login() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
+    const vkError = params.get("error");
+    const vkErrorDesc = params.get("error_description");
+    if (vkError) {
+      setError(`VK: ${vkErrorDesc || vkError}`);
+      window.history.replaceState({}, "", "/login");
+      return;
+    }
     const code = params.get("code");
     const deviceId = params.get("device_id");
     const returnedState = params.get("state");
@@ -67,6 +74,7 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Не удалось войти через VK");
+        window.history.replaceState({}, "", "/login");
         return;
       }
       localStorage.setItem("auth_token", data.token);
