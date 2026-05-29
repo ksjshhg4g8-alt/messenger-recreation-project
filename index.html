@@ -5,23 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>ПтичкаMax</title>
     <script>
-      // Аварийная очистка старого service worker и кэша — он вызывал
-      // циклические перезагрузки и ошибки "сеть недоступна" на домене.
+      // Одноразовая очистка СОБСТВЕННОГО старого service worker (/sw.js).
+      // Без перезагрузки страницы, чтобы не создавать цикл.
       (function () {
         try {
-          if ("serviceWorker" in navigator) {
+          if ("serviceWorker" in navigator && navigator.serviceWorker.getRegistrations) {
             navigator.serviceWorker.getRegistrations().then(function (regs) {
-              var had = regs.length > 0;
-              regs.forEach(function (r) { r.unregister(); });
-              if (window.caches && caches.keys) {
-                caches.keys().then(function (keys) {
-                  keys.forEach(function (k) { caches.delete(k); });
-                });
-              }
-              if (had && !sessionStorage.getItem("sw_cleaned")) {
-                sessionStorage.setItem("sw_cleaned", "1");
-                window.location.reload();
-              }
+              regs.forEach(function (r) {
+                var url = (r.active && r.active.scriptURL) || "";
+                if (url.indexOf("/sw.js") !== -1) {
+                  r.unregister();
+                }
+              });
             });
           }
         } catch (e) {}
