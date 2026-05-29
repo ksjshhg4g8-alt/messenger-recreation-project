@@ -28,23 +28,31 @@ def _normalize_phone(raw: str) -> str:
         digits = '7' + digits
     return digits
 
-def _send_sms(phone: str, code: str) -> bool:
+def _send_sms(phone: str, code: str):
     api_id = os.environ.get('SMSRU_API_ID', '')
     if not api_id:
-        return False
+        return False, 'Ключ SMS.ru не настроен'
     params = urllib.parse.urlencode({
         'api_id': api_id,
         'to': phone,
-        'msg': f'Код для входа: {code}',
+        'msg': f'Kod dlya vhoda: {code}',
         'json': 1
     })
     url = f'https://sms.ru/sms/send?{params}'
     try:
         with urllib.request.urlopen(url, timeout=10) as r:
             data = json.loads(r.read().decode())
-            return data.get('status') == 'OK'
-    except Exception:
-        return False
+            print('SMSRU response:', json.dumps(data))
+            if data.get('status') == 'OK':
+                sms_items = data.get('sms', {})
+                for _, info in sms_items.items():
+                    if info.get('status') != 'OK':
+                        return False, f"SMS.ru: {info.get('status_text', 'ошибка')}"
+                return True, None
+            return False, f"SMS.ru: {data.get('status_text', 'ошибка отправки')}"
+    except Exception as e:
+        print('SMSRU exception:', str(e))
+        return False, f'Ошибка соединения с SMS.ru: {e}'
 
 def _make_token(user_id: int) -> str:
     raw = f'{user_id}:{secrets.token_hex(32)}'
@@ -87,9 +95,9 @@ def handler(event: dict, context) -> dict:
                 (phone, code, expires)
             )
 
-            sent = _send_sms(phone, code)
+            sent, err = _send_sms(phone, code)
             if not sent:
-                return _resp(500, {'error': 'Не удалось отправить SMS. Проверьте баланс SMS.ru'})
+                return _resp(500, {'error': err or 'Не удалось отправить SMS'})
 
             return _resp(200, {'ok': True, 'phone': phone})
 
