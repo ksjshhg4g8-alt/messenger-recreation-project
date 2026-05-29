@@ -1,55 +1,44 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
-const MAX_AUTH_URL = "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88";
+const AUTH_URL = "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88";
 
 export default function Login() {
   const navigate = useNavigate();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState("");
-  const [link, setLink] = useState("");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (localStorage.getItem("auth_token")) navigate("/");
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
   }, [navigate]);
 
-  const finishLogin = (data: { token: string; user: unknown }) => {
-    localStorage.setItem("auth_token", data.token);
-    localStorage.setItem("auth_user", JSON.stringify(data.user));
-    if (pollRef.current) clearInterval(pollRef.current);
-    navigate("/");
-  };
-
-  const startMaxLogin = async () => {
+  const submit = async () => {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${MAX_AUTH_URL}?action=start`, { method: "POST" });
+      const body =
+        mode === "register" ? { login, password, name } : { login, password };
+      const res = await fetch(`${AUTH_URL}?action=${mode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Вход через MAX недоступен");
+        setError(data.error || "Ошибка входа");
         return;
       }
-      setLink(data.link);
-      setWaiting(true);
-      if (data.link) window.open(data.link, "_blank");
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const pr = await fetch(`${MAX_AUTH_URL}?action=poll&payload=${encodeURIComponent(data.payload)}`);
-          const pd = await pr.json();
-          if (pd.status === "confirmed" && pd.token) finishLogin(pd);
-        } catch {
-          /* keep polling */
-        }
-      }, 2500);
+      localStorage.setItem("auth_token", data.token);
+      localStorage.setItem("auth_user", JSON.stringify(data.user));
+      navigate("/");
     } catch {
       setError("Сеть недоступна");
     } finally {
@@ -57,64 +46,102 @@ export default function Login() {
     }
   };
 
-  const cancelWaiting = () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    setWaiting(false);
-    setLink("");
-  };
+  const canSubmit =
+    login.trim().length >= 3 &&
+    password.length >= (mode === "register" ? 6 : 1);
 
   return (
     <div className="flex items-center justify-center min-h-screen w-screen bg-mesh font-rubik">
       <div className="w-full max-w-md mx-4 animate-slide-up">
-        <div className="glass-strong rounded-3xl p-8 space-y-8 shadow-2xl">
+        <div className="glass-strong rounded-3xl p-8 space-y-6 shadow-2xl">
           <div className="flex flex-col items-center gap-4">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center shadow-xl neon-glow animate-float">
               <Icon name="MessageCircle" size={36} className="text-white" />
             </div>
             <div className="text-center">
               <h1 className="font-golos font-black text-3xl gradient-text mb-1">Vibe Messenger</h1>
-              <p className="text-white/50 text-sm">Войди через мессенджер MAX</p>
+              <p className="text-white/50 text-sm">
+                {mode === "login" ? "Вход по логину и паролю" : "Создай новый аккаунт"}
+              </p>
             </div>
           </div>
 
-          {!waiting ? (
+          <div className="flex gap-2 p-1 bg-white/5 rounded-2xl">
+            <button
+              onClick={() => { setMode("login"); setError(""); }}
+              className={`flex-1 h-9 rounded-xl text-sm font-medium transition ${
+                mode === "login" ? "bg-gradient-to-r from-violet-500 to-cyan-400 text-white" : "text-white/50"
+              }`}
+            >
+              Вход
+            </button>
+            <button
+              onClick={() => { setMode("register"); setError(""); }}
+              className={`flex-1 h-9 rounded-xl text-sm font-medium transition ${
+                mode === "register" ? "bg-gradient-to-r from-violet-500 to-cyan-400 text-white" : "text-white/50"
+              }`}
+            >
+              Регистрация
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {mode === "register" && (
+              <div>
+                <label className="text-xs text-white/50 mb-2 block">Имя (необязательно)</label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Как тебя зовут?"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl"
+                />
+              </div>
+            )}
+            <div>
+              <label className="text-xs text-white/50 mb-2 block">Логин</label>
+              <Input
+                value={login}
+                onChange={(e) => setLogin(e.target.value)}
+                placeholder="Придумай логин"
+                autoComplete="username"
+                className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/50 mb-2 block">Пароль</label>
+              <div className="relative">
+                <Input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && canSubmit && submit()}
+                  type={showPass ? "text" : "password"}
+                  placeholder={mode === "register" ? "Минимум 6 символов" : "Введи пароль"}
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
+                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+                >
+                  <Icon name={showPass ? "EyeOff" : "Eye"} size={18} />
+                </button>
+              </div>
+            </div>
             <Button
-              onClick={startMaxLogin}
-              disabled={loading}
-              className="w-full h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 hover:opacity-90 text-white font-bold text-base flex items-center justify-center gap-3"
+              onClick={submit}
+              disabled={loading || !canSubmit}
+              className="w-full h-12 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 hover:opacity-90 font-bold"
             >
               {loading ? (
-                <Icon name="Loader" size={22} className="animate-spin" />
+                <Icon name="Loader" size={20} className="animate-spin" />
+              ) : mode === "login" ? (
+                "Войти"
               ) : (
-                <>
-                  <Icon name="Send" size={22} />
-                  Войти через MAX
-                </>
+                "Зарегистрироваться"
               )}
             </Button>
-          ) : (
-            <div className="space-y-4 text-center">
-              <div className="flex flex-col items-center gap-3 bg-white/5 rounded-2xl p-6">
-                <Icon name="Loader" size={32} className="animate-spin text-cyan-300" />
-                <p className="text-white/70 text-sm">
-                  Открой бота в MAX и нажми «Начать». После подтверждения вход произойдёт автоматически.
-                </p>
-                {link && (
-                  <a
-                    href={link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-cyan-300 hover:text-cyan-200 text-sm font-medium underline"
-                  >
-                    Открыть бота MAX снова
-                  </a>
-                )}
-              </div>
-              <button onClick={cancelWaiting} className="text-white/50 hover:text-white text-xs">
-                Отмена
-              </button>
-            </div>
-          )}
+          </div>
 
           {error && (
             <div className="text-xs text-red-400 text-center bg-red-500/10 rounded-xl p-3">{error}</div>

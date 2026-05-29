@@ -23,6 +23,18 @@ def _make_token(user_id: int) -> str:
     raw = f'{user_id}:{secrets.token_hex(32)}'
     return hashlib.sha256(raw.encode()).hexdigest() + f':{user_id}'
 
+def _hash_password(password: str, salt: str = None) -> str:
+    if salt is None:
+        salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 120000)
+    return f'{salt}${dk.hex()}'
+
+def _verify_password(password: str, stored: str) -> bool:
+    if not stored or '$' not in stored:
+        return False
+    salt, _ = stored.split('$', 1)
+    return secrets.compare_digest(_hash_password(password, salt), stored)
+
 def _max_get(path: str):
     token = os.environ.get('MAX_BOT_TOKEN', '')
     req = urllib.request.Request(
@@ -154,6 +166,60 @@ def handler(event: dict, context) -> dict:
                 })
             return _resp(200, {'status': status})
 
+        if action == 'register':
+            body = json.loads(event.get('body') or '{}')
+            login = (body.get('login') or '').strip()
+            password = body.get('password') or ''
+            name = (body.get('name') or '').strip()
+
+            if len(login) < 3:
+                return _resp(400, {'error': 'Логин минимум 3 символа'})
+            if len(password) < 6:
+                return _resp(400, {'error': 'Пароль минимум 6 символов'})
+
+            cur.execute("SELECT id FROM users WHERE lower(login) = lower(%s)", (login,))
+            if cur.fetchone():
+                return _resp(409, {'error': 'Такой логин уже занят'})
+
+            pwd_hash = _hash_password(password)
+            display_name = name or login
+            cur.execute(
+                "INSERT INTO users (login, password_hash, name, last_login_at) VALUES (%s, %s, %s, NOW()) RETURNING id, name, avatar_url",
+                (login, pwd_hash, display_name)
+            )
+            uid, uname, avatar = cur.fetchone()
+            token = _make_token(uid)
+            return _resp(200, {
+                'ok': True,
+                'token': token,
+                'user': {'id': uid, 'login': login, 'name': uname, 'avatar_url': avatar}
+            })
+
+        if action == 'login':
+            body = json.loads(event.get('body') or '{}')
+            login = (body.get('login') or '').strip()
+            password = body.get('password') or ''
+
+            if not login or not password:
+                return _resp(400, {'error': 'Введите логин и пароль'})
+
+            cur.execute(
+                "SELECT id, name, avatar_url, password_hash FROM users WHERE lower(login) = lower(%s)",
+                (login,)
+            )
+            row = cur.fetchone()
+            if not row or not _verify_password(password, row[3]):
+                return _resp(401, {'error': 'Неверный логин или пароль'})
+
+            uid, uname, avatar, _ = row
+            cur.execute("UPDATE users SET last_login_at = NOW() WHERE id = %s", (uid,))
+            token = _make_token(uid)
+            return _resp(200, {
+                'ok': True,
+                'token': token,
+                'user': {'id': uid, 'login': login, 'name': uname, 'avatar_url': avatar}
+            })
+
         if action == 'me':
             headers = event.get('headers') or {}
             token = headers.get('X-Auth-Token') or headers.get('x-auth-token') or ''
@@ -163,11 +229,11 @@ def handler(event: dict, context) -> dict:
                 user_id = int(token.rsplit(':', 1)[1])
             except Exception:
                 return _resp(401, {'error': 'Не авторизован'})
-            cur.execute("SELECT id, max_user_id, name, avatar_url FROM users WHERE id = %s", (user_id,))
+            cur.execute("SELECT id, max_user_id, login, name, avatar_url FROM users WHERE id = %s", (user_id,))
             row = cur.fetchone()
             if not row:
                 return _resp(401, {'error': 'Не авторизован'})
-            return _resp(200, {'user': {'id': row[0], 'max_user_id': row[1], 'name': row[2], 'avatar_url': row[3]}})
+            return _resp(200, {'user': {'id': row[0], 'max_user_id': row[1], 'login': row[2], 'name': row[3], 'avatar_url': row[4]}})
 
         return _resp(400, {'error': 'Неизвестное действие'})
     finally:

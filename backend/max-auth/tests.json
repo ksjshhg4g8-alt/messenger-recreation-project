@@ -26,6 +26,42 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Register with short login returns 400",
+      "method": "POST",
+      "path": "/?action=register",
+      "body": {"login": "ab", "password": "123456"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Register with short password returns 400",
+      "method": "POST",
+      "path": "/?action=register",
+      "body": {"login": "tester", "password": "123"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login without data returns 400",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login with wrong credentials returns 401",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {"login": "nouser_xyz", "password": "wrongpass"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Unknown action returns 400",
       "method": "GET",
       "path": "/?action=xxx",
