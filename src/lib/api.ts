@@ -81,7 +81,26 @@ export interface Post {
   author_name: string;
   author_avatar: string | null;
   likes: number;
+  comments?: number;
   liked: boolean;
+}
+
+export interface Comment {
+  id: number;
+  text: string;
+  created_at: string;
+  author_id: number;
+  author_name: string;
+  author_avatar: string | null;
+}
+
+export interface IncomingCall {
+  id: number;
+  caller_id: number;
+  call_type: "audio" | "video";
+  offer_sdp: string;
+  caller_name: string;
+  caller_avatar: string | null;
 }
 
 export interface Community {
@@ -131,6 +150,12 @@ export const api = {
     members?: number[];
   }): Promise<{ chat_id: number; existing: boolean }> =>
     req(`${CHATS_URL}?action=create-chat`, "POST", payload),
+
+  editMessage: (messageId: number, text: string): Promise<{ ok: boolean }> =>
+    req(`${CHATS_URL}?action=edit-message`, "POST", { message_id: messageId, text }),
+
+  deleteMessage: (messageId: number): Promise<{ ok: boolean }> =>
+    req(`${CHATS_URL}?action=delete-message`, "POST", { message_id: messageId }),
 
   searchUsers: (q: string): Promise<{ users: SearchUser[] }> =>
     req(`${CHATS_URL}?action=search-users&q=${encodeURIComponent(q)}`, "GET"),
@@ -198,6 +223,39 @@ export const api = {
 
   statusPing: (): Promise<{ ok: boolean }> =>
     req(`${SOCIAL_URL}?action=status-ping`, "GET"),
+
+  videoFeed: (): Promise<{ posts: Post[]; me: number }> =>
+    req(`${SOCIAL_URL}?action=video-feed`, "GET"),
+
+  commentsList: (postId: number): Promise<{ comments: Comment[]; me: number }> =>
+    req(`${SOCIAL_URL}?action=comments-list&post_id=${postId}`, "GET"),
+
+  commentAdd: (postId: number, text: string): Promise<{ id: number; created_at: string }> =>
+    req(`${SOCIAL_URL}?action=comment-add`, "POST", { post_id: postId, text }),
+
+  commentDelete: (commentId: number): Promise<{ ok: boolean }> =>
+    req(`${SOCIAL_URL}?action=comment-delete`, "POST", { comment_id: commentId }),
+
+  callStart: (payload: { callee_id: number; call_type: "audio" | "video"; offer_sdp: string }): Promise<{ call_id: number }> =>
+    req(`${SOCIAL_URL}?action=call-start`, "POST", payload),
+
+  callIncoming: (): Promise<{ call: IncomingCall | null }> =>
+    req(`${SOCIAL_URL}?action=call-incoming`, "GET"),
+
+  callAnswer: (callId: number, answerSdp: string): Promise<{ ok: boolean }> =>
+    req(`${SOCIAL_URL}?action=call-answer`, "POST", { call_id: callId, answer_sdp: answerSdp }),
+
+  callPoll: (callId: number): Promise<{ status: string; answer_sdp: string | null }> =>
+    req(`${SOCIAL_URL}?action=call-poll&call_id=${callId}`, "GET"),
+
+  callEnd: (callId: number): Promise<{ ok: boolean }> =>
+    req(`${SOCIAL_URL}?action=call-end`, "POST", { call_id: callId }),
+
+  callIceAdd: (callId: number, candidate: RTCIceCandidateInit): Promise<{ ok: boolean }> =>
+    req(`${SOCIAL_URL}?action=call-ice-add`, "POST", { call_id: callId, candidate }),
+
+  callIceGet: (callId: number, after: number): Promise<{ candidates: { id: number; candidate: string }[] }> =>
+    req(`${SOCIAL_URL}?action=call-ice-get&call_id=${callId}&after=${after}`, "GET"),
 };
 
 export async function fileToBase64(file: File): Promise<string> {

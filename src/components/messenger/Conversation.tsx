@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import Avatar from "./Avatar";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
+import CallModal from "./CallModal";
 import { api, Chat, Message } from "@/lib/api";
 
 interface ConversationProps {
@@ -15,6 +16,8 @@ export default function Conversation({ chat, onBack, onUpdated }: ConversationPr
   const [messages, setMessages] = useState<Message[]>([]);
   const [me, setMe] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+  const [call, setCall] = useState<"audio" | "video" | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef(0);
 
@@ -55,6 +58,11 @@ export default function Conversation({ chat, onBack, onUpdated }: ConversationPr
     load();
   };
 
+  const handleDelete = async (messageId: number) => {
+    await api.deleteMessage(messageId);
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+  };
+
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-transparent to-black/20">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-black/30 backdrop-blur-xl">
@@ -68,12 +76,22 @@ export default function Conversation({ chat, onBack, onUpdated }: ConversationPr
             {chat.type === "group" ? "Группа" : chat.online ? "в сети" : "не в сети"}
           </p>
         </div>
-        <button className="w-9 h-9 rounded-full flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10">
-          <Icon name="Phone" size={18} />
-        </button>
-        <button className="w-9 h-9 rounded-full flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10">
-          <Icon name="Video" size={18} />
-        </button>
+        {chat.type === "private" && chat.other_id && (
+          <>
+            <button
+              onClick={() => setCall("audio")}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10"
+            >
+              <Icon name="Phone" size={18} />
+            </button>
+            <button
+              onClick={() => setCall("video")}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10"
+            >
+              <Icon name="Video" size={18} />
+            </button>
+          </>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
@@ -88,12 +106,36 @@ export default function Conversation({ chat, onBack, onUpdated }: ConversationPr
           </div>
         ) : (
           messages.map((m) => (
-            <MessageBubble key={m.id} msg={m} me={me} isGroup={chat.type === "group"} onReact={handleReact} />
+            <MessageBubble
+              key={m.id}
+              msg={m}
+              me={me}
+              isGroup={chat.type === "group"}
+              onReact={handleReact}
+              onEdit={(msg) => setEditing({ id: msg.id, text: msg.text || "" })}
+              onDelete={handleDelete}
+            />
           ))
         )}
       </div>
 
-      <MessageInput chatId={chat.id} onSent={() => load()} />
+      <MessageInput
+        chatId={chat.id}
+        onSent={() => load()}
+        editing={editing}
+        onCancelEdit={() => setEditing(null)}
+      />
+
+      {call && chat.other_id && (
+        <CallModal
+          calleeId={chat.other_id}
+          calleeName={chat.title}
+          calleeAvatar={chat.avatar_url}
+          callType={call}
+          mode="outgoing"
+          onClose={() => setCall(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { api, fileToBase64 } from "@/lib/api";
 
@@ -6,20 +6,31 @@ const EMOJIS = ["😀","😂","😍","🥰","😎","🤔","😭","😡","👍","
 const STICKERS = ["🐶","🐱","🦄","🐼","🦊","🐸","🐵","🦁","🐯","🐨","🐰","🐻","🐹","🐧","🦋"];
 const GIFTS = ["🎁","💐","🌹","🍰","🎂","🧸","💎","🏆","👑","🍾","🎈","💝"];
 
+interface EditTarget {
+  id: number;
+  text: string;
+}
+
 interface MessageInputProps {
   chatId: number;
   onSent: () => void;
+  editing?: EditTarget | null;
+  onCancelEdit?: () => void;
 }
 
 type Panel = "none" | "emoji" | "sticker" | "gift" | "attach";
 
-export default function MessageInput({ chatId, onSent }: MessageInputProps) {
+export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: MessageInputProps) {
   const [text, setText] = useState("");
   const [panel, setPanel] = useState<Panel>("none");
   const [uploading, setUploading] = useState(false);
   const photoRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) setText(editing.text);
+  }, [editing]);
 
   const send = async (payload: Parameters<typeof api.sendMessage>[0]) => {
     await api.sendMessage(payload);
@@ -29,6 +40,13 @@ export default function MessageInput({ chatId, onSent }: MessageInputProps) {
   const sendText = async () => {
     const t = text.trim();
     if (!t) return;
+    if (editing) {
+      setText("");
+      await api.editMessage(editing.id, t);
+      onCancelEdit?.();
+      onSent();
+      return;
+    }
     setText("");
     await send({ chat_id: chatId, type: "text", text: t });
   };
@@ -45,8 +63,71 @@ export default function MessageInput({ chatId, onSent }: MessageInputProps) {
     }
   };
 
+  const [circle, setCircle] = useState<{ recording: boolean; seconds: number }>({ recording: false, seconds: 0 });
+  const circlePreviewRef = useRef<HTMLVideoElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopStream = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  const startCircle = async () => {
+    setPanel("none");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const rec = new MediaRecorder(stream, { mimeType: "video/webm" });
+      rec.ondataavailable = (e) => e.data.size > 0 && chunksRef.current.push(e.data);
+      recorderRef.current = rec;
+      rec.start();
+      setCircle({ recording: true, seconds: 0 });
+      timerRef.current = setInterval(() => setCircle((c) => ({ ...c, seconds: c.seconds + 1 })), 1000);
+      setTimeout(() => {
+        if (circlePreviewRef.current) circlePreviewRef.current.srcObject = stream;
+      }, 100);
+    } catch {
+      alert("Не удалось получить доступ к камере");
+    }
+  };
+
+  const stopCircle = () => {
+    const rec = recorderRef.current;
+    if (!rec) return;
+    rec.onstop = async () => {
+      const blob = new Blob(chunksRef.current, { type: "video/webm" });
+      const file = new File([blob], `circle-${Date.now()}.webm`, { type: "video/webm" });
+      stopStream();
+      setCircle({ recording: false, seconds: 0 });
+      await uploadAndSend(file, "circle", "circles");
+    };
+    rec.stop();
+  };
+
+  const cancelCircle = () => {
+    recorderRef.current?.stop();
+    stopStream();
+    setCircle({ recording: false, seconds: 0 });
+  };
+
+  useEffect(() => () => stopStream(), []);
+
   return (
     <div className="border-t border-white/5 bg-black/30 backdrop-blur-xl">
+      {editing && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-violet-500/10">
+          <Icon name="Pencil" size={15} className="text-violet-300" />
+          <span className="flex-1 text-xs text-white/60 truncate">Редактирование: {editing.text}</span>
+          <button onClick={() => { setText(""); onCancelEdit?.(); }} className="text-white/40 hover:text-white">
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+      )}
       {panel === "emoji" && (
         <Grid items={EMOJIS} onPick={(e) => setText((t) => t + e)} />
       )}
@@ -60,7 +141,25 @@ export default function MessageInput({ chatId, onSent }: MessageInputProps) {
         <div className="flex gap-3 p-4">
           <AttachBtn icon="Image" label="Фото" color="from-violet-500 to-cyan-400" onClick={() => photoRef.current?.click()} />
           <AttachBtn icon="Video" label="Видео" color="from-pink-500 to-violet-500" onClick={() => videoRef.current?.click()} />
+          <AttachBtn icon="Circle" label="Кружок" color="from-cyan-500 to-emerald-400" onClick={startCircle} />
           <AttachBtn icon="FileText" label="Файл" color="from-amber-400 to-orange-500" onClick={() => fileRef.current?.click()} />
+        </div>
+      )}
+
+      {circle.recording && (
+        <div className="flex flex-col items-center gap-3 p-4 border-b border-white/5">
+          <video ref={circlePreviewRef} autoPlay muted playsInline className="w-44 h-44 rounded-full object-cover ring-4 ring-cyan-400/50" />
+          <div className="flex items-center gap-3">
+            <span className="text-red-400 text-sm flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Запись {circle.seconds}с
+            </span>
+            <button onClick={stopCircle} className="px-4 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 text-white text-sm font-medium">
+              Отправить
+            </button>
+            <button onClick={cancelCircle} className="px-4 h-9 rounded-xl bg-white/10 text-white/70 text-sm">
+              Отмена
+            </button>
+          </div>
         </div>
       )}
 

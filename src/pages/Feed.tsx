@@ -4,8 +4,11 @@ import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import Avatar from "@/components/messenger/Avatar";
 import BottomNav from "@/components/messenger/BottomNav";
+import CommentsSheet from "@/components/messenger/CommentsSheet";
 import { formatTime } from "@/components/messenger/utils";
 import { api, Post, getCurrentUser, fileToBase64 } from "@/lib/api";
+
+const isVideo = (url: string | null) => !!url && /\.(mp4|webm|mov)$/i.test(url);
 
 export default function Feed() {
   const navigate = useNavigate();
@@ -15,17 +18,20 @@ export default function Feed() {
   const [media, setMedia] = useState<string>("");
   const [posting, setPosting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [commentsFor, setCommentsFor] = useState<number | null>(null);
+  const [tab, setTab] = useState<"all" | "video">("all");
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await api.feedList();
+      const res = tab === "video" ? await api.videoFeed() : await api.feedList();
       setPosts(res.posts);
     } catch {
       navigate("/login");
     } finally {
       setLoading(false);
     }
-  }, [navigate]);
+  }, [navigate, tab]);
 
   useEffect(() => {
     if (!localStorage.getItem("auth_token")) {
@@ -35,12 +41,19 @@ export default function Feed() {
     load();
   }, [navigate, load]);
 
-  const pickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+
+  const pickMedia = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const b64 = await fileToBase64(file);
-    const up = await api.uploadMedia(b64, file.type, "posts");
-    setMedia(up.url);
+    setUploadingMedia(true);
+    try {
+      const b64 = await fileToBase64(file);
+      const up = await api.uploadMedia(b64, file.type, "posts");
+      setMedia(up.url);
+    } finally {
+      setUploadingMedia(false);
+    }
   };
 
   const publish = async () => {
@@ -65,8 +78,26 @@ export default function Feed() {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-mesh overflow-hidden font-rubik">
-      <div className="shrink-0 px-5 py-4 glass-strong border-b border-white/10">
+      <div className="shrink-0 px-5 py-4 glass-strong border-b border-white/10 space-y-3">
         <h1 className="font-golos font-black text-xl gradient-text">Лента</h1>
+        <div className="flex gap-2 p-1 bg-white/5 rounded-2xl max-w-xs">
+          <button
+            onClick={() => setTab("all")}
+            className={`flex-1 h-8 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+              tab === "all" ? "bg-gradient-to-r from-violet-500 to-cyan-400 text-white" : "text-white/50"
+            }`}
+          >
+            <Icon name="Newspaper" size={15} /> Все
+          </button>
+          <button
+            onClick={() => setTab("video")}
+            className={`flex-1 h-8 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+              tab === "video" ? "bg-gradient-to-r from-violet-500 to-cyan-400 text-white" : "text-white/50"
+            }`}
+          >
+            <Icon name="Clapperboard" size={15} fallback="Video" /> Видео
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -83,7 +114,11 @@ export default function Feed() {
             </div>
             {media && (
               <div className="relative rounded-xl overflow-hidden">
-                <img src={media} alt="" className="w-full max-h-72 object-cover" />
+                {isVideo(media) ? (
+                  <video src={media} controls className="w-full max-h-72" />
+                ) : (
+                  <img src={media} alt="" className="w-full max-h-72 object-cover" />
+                )}
                 <button
                   onClick={() => setMedia("")}
                   className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white"
@@ -94,9 +129,9 @@ export default function Feed() {
             )}
             <div className="flex items-center justify-between">
               <label className="cursor-pointer text-white/50 hover:text-white flex items-center gap-2 text-sm">
-                <Icon name="Image" size={18} />
-                Фото
-                <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
+                <Icon name={uploadingMedia ? "Loader" : "Image"} size={18} className={uploadingMedia ? "animate-spin" : ""} />
+                Фото / Видео
+                <input type="file" accept="image/*,video/*" className="hidden" onChange={pickMedia} />
               </label>
               <Button
                 onClick={publish}
@@ -132,22 +167,45 @@ export default function Feed() {
                 </button>
                 {post.text && <p className="text-white/90 text-sm whitespace-pre-wrap">{post.text}</p>}
                 {post.media_url && (
-                  <img src={post.media_url} alt="" className="w-full rounded-xl max-h-96 object-cover" />
+                  isVideo(post.media_url) ? (
+                    <video src={post.media_url} controls className="w-full rounded-xl max-h-96" />
+                  ) : (
+                    <img src={post.media_url} alt="" className="w-full rounded-xl max-h-96 object-cover" />
+                  )
                 )}
-                <button
-                  onClick={() => toggleLike(post)}
-                  className={`flex items-center gap-2 text-sm transition ${
-                    post.liked ? "text-pink-400" : "text-white/40 hover:text-white/70"
-                  }`}
-                >
-                  <Icon name={post.liked ? "Heart" : "Heart"} size={18} fallback="Heart" />
-                  {post.likes > 0 && <span>{post.likes}</span>}
-                </button>
+                <div className="flex items-center gap-5">
+                  <button
+                    onClick={() => toggleLike(post)}
+                    className={`flex items-center gap-2 text-sm transition ${
+                      post.liked ? "text-pink-400" : "text-white/40 hover:text-white/70"
+                    }`}
+                  >
+                    <Icon name="Heart" size={18} />
+                    {post.likes > 0 && <span>{post.likes}</span>}
+                  </button>
+                  <button
+                    onClick={() => setCommentsFor(post.id)}
+                    className="flex items-center gap-2 text-sm text-white/40 hover:text-white/70 transition"
+                  >
+                    <Icon name="MessageCircle" size={18} />
+                    {!!post.comments && post.comments > 0 && <span>{post.comments}</span>}
+                  </button>
+                </div>
               </div>
             ))
           )}
         </div>
       </div>
+
+      {commentsFor !== null && (
+        <CommentsSheet
+          postId={commentsFor}
+          onClose={() => setCommentsFor(null)}
+          onCountChange={(count) =>
+            setPosts((prev) => prev.map((p) => (p.id === commentsFor ? { ...p, comments: count } : p)))
+          }
+        />
+      )}
 
       <BottomNav />
     </div>

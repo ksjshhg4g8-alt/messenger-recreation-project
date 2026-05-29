@@ -27,7 +27,7 @@ def _user_id(event):
 def handler(event: dict, context) -> dict:
     '''
     Управление чатами и сообщениями мессенджера.
-    Действия: list-chats, get-messages, send-message, create-chat, search-users, mark-read, react.
+    Действия: list-chats, get-messages, send-message, create-chat, search-users, mark-read, react, edit-message, delete-message.
     '''
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors(), 'body': ''}
@@ -181,6 +181,35 @@ def handler(event: dict, context) -> dict:
                     INSERT INTO message_reactions (message_id, user_id, emoji) VALUES (%s, %s, %s)
                     ON CONFLICT (message_id, user_id) DO UPDATE SET emoji = EXCLUDED.emoji
                 """, (msg_id, uid, emoji))
+            return _resp(200, {'ok': True})
+
+        if action == 'edit-message':
+            body = json.loads(event.get('body') or '{}')
+            msg_id = int(body.get('message_id', 0))
+            text = (body.get('text') or '').strip()
+            if not text:
+                return _resp(400, {'error': 'Пустой текст'})
+            cur.execute("SELECT sender_id, type FROM messages WHERE id = %s AND NOT removed", (msg_id,))
+            row = cur.fetchone()
+            if not row:
+                return _resp(404, {'error': 'Сообщение не найдено'})
+            if row['sender_id'] != uid:
+                return _resp(403, {'error': 'Можно редактировать только свои сообщения'})
+            if row['type'] != 'text':
+                return _resp(400, {'error': 'Редактировать можно только текст'})
+            cur.execute("UPDATE messages SET text = %s, edited_at = NOW() WHERE id = %s", (text, msg_id))
+            return _resp(200, {'ok': True})
+
+        if action == 'delete-message':
+            body = json.loads(event.get('body') or '{}')
+            msg_id = int(body.get('message_id', 0))
+            cur.execute("SELECT sender_id FROM messages WHERE id = %s", (msg_id,))
+            row = cur.fetchone()
+            if not row:
+                return _resp(404, {'error': 'Сообщение не найдено'})
+            if row['sender_id'] != uid:
+                return _resp(403, {'error': 'Можно удалять только свои сообщения'})
+            cur.execute("UPDATE messages SET removed = TRUE WHERE id = %s", (msg_id,))
             return _resp(200, {'ok': True})
 
         return _resp(400, {'error': 'Неизвестное действие'})

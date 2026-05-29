@@ -10,10 +10,13 @@ interface MessageBubbleProps {
   me: number;
   isGroup: boolean;
   onReact: (messageId: number, emoji: string) => void;
+  onEdit?: (msg: Message) => void;
+  onDelete?: (messageId: number) => void;
 }
 
-export default function MessageBubble({ msg, me, isGroup, onReact }: MessageBubbleProps) {
+export default function MessageBubble({ msg, me, isGroup, onReact, onEdit, onDelete }: MessageBubbleProps) {
   const [showReact, setShowReact] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const mine = msg.sender_id === me;
   const reactions = msg.reactions || [];
 
@@ -76,6 +79,7 @@ export default function MessageBubble({ msg, me, isGroup, onReact }: MessageBubb
           {renderContent()}
           {!plain && (
             <div className={`flex items-center gap-1 mt-0.5 ${mine ? "justify-end" : ""}`}>
+              {msg.edited_at && <span className="text-[10px] text-white/40 italic">изм.</span>}
               <span className="text-[10px] text-white/50">{formatTime(msg.created_at)}</span>
               {mine && (
                 <Icon
@@ -88,12 +92,42 @@ export default function MessageBubble({ msg, me, isGroup, onReact }: MessageBubb
           )}
         </div>
 
-        <button
-          onClick={() => setShowReact((v) => !v)}
-          className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-white transition shrink-0"
-        >
-          <Icon name="SmilePlus" size={16} />
-        </button>
+        <div className="relative flex items-center">
+          <button
+            onClick={() => setShowReact((v) => !v)}
+            className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-white transition shrink-0"
+          >
+            <Icon name="SmilePlus" size={16} />
+          </button>
+          {mine && (onEdit || onDelete) && (
+            <button
+              onClick={() => setShowMenu((v) => !v)}
+              className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-white transition shrink-0 ml-1"
+            >
+              <Icon name="EllipsisVertical" size={16} fallback="MoreVertical" />
+            </button>
+          )}
+          {showMenu && (
+            <div className={`absolute z-20 top-6 ${mine ? "right-0" : "left-0"} bg-[#1a1430] border border-white/10 rounded-xl py-1 shadow-xl min-w-[140px]`}>
+              {msg.type === "text" && onEdit && (
+                <button
+                  onClick={() => { onEdit(msg); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2"
+                >
+                  <Icon name="Pencil" size={15} /> Редактировать
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={() => { onDelete(msg.id); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2"
+                >
+                  <Icon name="Trash2" size={15} /> Удалить
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {Object.keys(grouped).length > 0 && (

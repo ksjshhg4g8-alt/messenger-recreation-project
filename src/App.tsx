@@ -10,6 +10,7 @@ import Feed from "./pages/Feed";
 import Communities from "./pages/Communities";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import IncomingCallWatcher from "./components/messenger/IncomingCallWatcher";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <IncomingCallWatcher />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />

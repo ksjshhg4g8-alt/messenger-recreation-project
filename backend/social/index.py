@@ -27,8 +27,10 @@ def _uid_from_token(event):
 def handler(event: dict, context) -> dict:
     '''
     Социальные функции: лента публикаций, группы/каналы, статусы онлайн, профиль пользователя.
-    Действия: feed-list, feed-create, feed-like, communities-list, community-create,
-    community-join, community-leave, community-detail, status-ping, profile-get, profile-update.
+    Действия: feed-list, video-feed, feed-create, feed-like, comments-list, comment-add, comment-delete,
+    communities-list, community-create, community-join, community-leave, community-detail,
+    status-ping, profile-get, profile-update,
+    call-start, call-incoming, call-answer, call-poll, call-end, call-ice-add, call-ice-get.
     '''
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors(), 'body': ''}
@@ -51,21 +53,63 @@ def handler(event: dict, context) -> dict:
         if action == 'status-ping':
             return _resp(200, {'ok': True})
 
-        if action == 'feed-list':
+        if action in ('feed-list', 'video-feed'):
+            only_video = action == 'video-feed'
+            where = "WHERE p.media_url ILIKE '%%.mp4' OR p.media_url ILIKE '%%.webm' OR p.media_url ILIKE '%%.mov'" if only_video else ""
             cur.execute(
-                """
+                f"""
                 SELECT p.id, p.text, p.media_url, p.created_at,
                        u.id AS author_id, u.name AS author_name, u.avatar_url AS author_avatar,
                        (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS likes,
+                       (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.id) AS comments,
                        EXISTS(SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = %s) AS liked
                 FROM posts p
                 JOIN users u ON u.id = p.user_id
+                {where}
                 ORDER BY p.created_at DESC
                 LIMIT 100
                 """,
                 (uid,)
             )
             return _resp(200, {'posts': cur.fetchall(), 'me': uid})
+
+        if action == 'comments-list':
+            post_id = int(params.get('post_id', 0))
+            cur.execute(
+                """
+                SELECT c.id, c.text, c.created_at,
+                       u.id AS author_id, u.name AS author_name, u.avatar_url AS author_avatar
+                FROM post_comments c JOIN users u ON u.id = c.user_id
+                WHERE c.post_id = %s ORDER BY c.created_at ASC LIMIT 200
+                """,
+                (post_id,)
+            )
+            return _resp(200, {'comments': cur.fetchall(), 'me': uid})
+
+        if action == 'comment-add':
+            body = json.loads(event.get('body') or '{}')
+            post_id = body.get('post_id')
+            text = (body.get('text') or '').strip()
+            if not post_id or not text:
+                return _resp(400, {'error': 'Пустой комментарий'})
+            cur.execute(
+                "INSERT INTO post_comments (post_id, user_id, text) VALUES (%s, %s, %s) RETURNING id, created_at",
+                (post_id, uid, text)
+            )
+            row = cur.fetchone()
+            return _resp(200, {'id': row['id'], 'created_at': row['created_at']})
+
+        if action == 'comment-delete':
+            body = json.loads(event.get('body') or '{}')
+            cid = int(body.get('comment_id', 0))
+            cur.execute("SELECT user_id FROM post_comments WHERE id = %s", (cid,))
+            row = cur.fetchone()
+            if not row:
+                return _resp(404, {'error': 'Комментарий не найден'})
+            if row['user_id'] != uid:
+                return _resp(403, {'error': 'Можно удалять только свои комментарии'})
+            cur.execute("DELETE FROM post_comments WHERE id = %s", (cid,))
+            return _resp(200, {'ok': True})
 
         if action == 'feed-create':
             body = json.loads(event.get('body') or '{}')
@@ -205,6 +249,76 @@ def handler(event: dict, context) -> dict:
             args.append(uid)
             cur.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = %s RETURNING id, name, login, avatar_url, bio, status_text", args)
             return _resp(200, {'user': cur.fetchone()})
+
+        # ===== WebRTC звонки (сигналинг через polling) =====
+        if action == 'call-start':
+            body = json.loads(event.get('body') or '{}')
+            callee_id = int(body.get('callee_id', 0))
+            call_type = body.get('call_type') if body.get('call_type') in ('audio', 'video') else 'video'
+            offer = body.get('offer_sdp') or ''
+            if not callee_id or not offer:
+                return _resp(400, {'error': 'Нет данных звонка'})
+            cur.execute("UPDATE calls SET status = 'ended' WHERE (caller_id = %s OR callee_id = %s) AND status IN ('ringing', 'active')", (uid, uid))
+            cur.execute(
+                "INSERT INTO calls (caller_id, callee_id, call_type, status, offer_sdp) VALUES (%s, %s, %s, 'ringing', %s) RETURNING id",
+                (uid, callee_id, call_type, offer)
+            )
+            return _resp(200, {'call_id': cur.fetchone()['id']})
+
+        if action == 'call-incoming':
+            cur.execute(
+                """
+                SELECT c.id, c.caller_id, c.call_type, c.offer_sdp,
+                       u.name AS caller_name, u.avatar_url AS caller_avatar
+                FROM calls c JOIN users u ON u.id = c.caller_id
+                WHERE c.callee_id = %s AND c.status = 'ringing'
+                AND c.created_at > NOW() - INTERVAL '60 seconds'
+                ORDER BY c.id DESC LIMIT 1
+                """,
+                (uid,)
+            )
+            return _resp(200, {'call': cur.fetchone()})
+
+        if action == 'call-answer':
+            body = json.loads(event.get('body') or '{}')
+            call_id = int(body.get('call_id', 0))
+            answer = body.get('answer_sdp') or ''
+            cur.execute("SELECT callee_id FROM calls WHERE id = %s", (call_id,))
+            row = cur.fetchone()
+            if not row or row['callee_id'] != uid:
+                return _resp(403, {'error': 'Нет доступа к звонку'})
+            cur.execute("UPDATE calls SET answer_sdp = %s, status = 'active', updated_at = NOW() WHERE id = %s", (answer, call_id))
+            return _resp(200, {'ok': True})
+
+        if action == 'call-poll':
+            call_id = int(params.get('call_id', 0))
+            cur.execute("SELECT caller_id, callee_id, status, answer_sdp FROM calls WHERE id = %s", (call_id,))
+            row = cur.fetchone()
+            if not row or uid not in (row['caller_id'], row['callee_id']):
+                return _resp(404, {'error': 'Звонок не найден'})
+            return _resp(200, {'status': row['status'], 'answer_sdp': row['answer_sdp']})
+
+        if action == 'call-end':
+            body = json.loads(event.get('body') or '{}')
+            call_id = int(body.get('call_id', 0))
+            cur.execute("UPDATE calls SET status = 'ended', updated_at = NOW() WHERE id = %s AND (caller_id = %s OR callee_id = %s)", (call_id, uid, uid))
+            return _resp(200, {'ok': True})
+
+        if action == 'call-ice-add':
+            body = json.loads(event.get('body') or '{}')
+            call_id = int(body.get('call_id', 0))
+            candidate = json.dumps(body.get('candidate'))
+            cur.execute("INSERT INTO call_candidates (call_id, sender_id, candidate) VALUES (%s, %s, %s)", (call_id, uid, candidate))
+            return _resp(200, {'ok': True})
+
+        if action == 'call-ice-get':
+            call_id = int(params.get('call_id', 0))
+            after = int(params.get('after', 0))
+            cur.execute(
+                "SELECT id, candidate FROM call_candidates WHERE call_id = %s AND sender_id != %s AND id > %s ORDER BY id ASC",
+                (call_id, uid, after)
+            )
+            return _resp(200, {'candidates': cur.fetchall()})
 
         return _resp(400, {'error': 'Неизвестное действие'})
     finally:
