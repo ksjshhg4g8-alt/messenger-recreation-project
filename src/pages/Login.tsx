@@ -6,10 +6,14 @@ import { Input } from "@/components/ui/input";
 
 const AUTH_URL = "https://functions.poehali.dev/5fd254ac-b084-4d77-b335-521d7c4031b2";
 
+type Method = "phone" | "email";
+
 export default function Login() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<"phone" | "code">("phone");
+  const [method, setMethod] = useState<Method>("email");
+  const [step, setStep] = useState<"input" | "code">("input");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,9 +21,7 @@ export default function Login() {
   const [resendIn, setResendIn] = useState(0);
 
   useEffect(() => {
-    if (localStorage.getItem("auth_token")) {
-      navigate("/");
-    }
+    if (localStorage.getItem("auth_token")) navigate("/");
   }, [navigate]);
 
   useEffect(() => {
@@ -41,14 +43,19 @@ export default function Login() {
     return parts.join("");
   };
 
+  const sendActions = method === "phone"
+    ? { send: "send-code", verify: "verify-code" }
+    : { send: "send-email-code", verify: "verify-email-code" };
+
   const sendCode = async () => {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${AUTH_URL}?action=send-code`, {
+      const body = method === "phone" ? { phone } : { email };
+      const res = await fetch(`${AUTH_URL}?action=${sendActions.send}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -68,10 +75,11 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${AUTH_URL}?action=verify-code`, {
+      const body = method === "phone" ? { phone, code, name } : { email, code, name };
+      const res = await fetch(`${AUTH_URL}?action=${sendActions.verify}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, code, name }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -88,6 +96,19 @@ export default function Login() {
     }
   };
 
+  const switchMethod = (m: Method) => {
+    setMethod(m);
+    setStep("input");
+    setCode("");
+    setError("");
+  };
+
+  const canSend = method === "phone"
+    ? phone.replace(/\D/g, "").length >= 11
+    : /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+
+  const target = method === "phone" ? formatPhone(phone) : email;
+
   return (
     <div className="flex items-center justify-center min-h-screen w-screen bg-mesh font-rubik">
       <div className="w-full max-w-md mx-4 animate-slide-up">
@@ -99,52 +120,87 @@ export default function Login() {
             <div className="text-center">
               <h1 className="font-golos font-black text-3xl gradient-text mb-1">Vibe Messenger</h1>
               <p className="text-white/50 text-sm">
-                {step === "phone" ? "Войди по номеру телефона" : "Введи код из SMS"}
+                {step === "code"
+                  ? method === "phone" ? "Введи код из SMS" : "Введи код из письма"
+                  : "Войди или зарегистрируйся"}
               </p>
             </div>
           </div>
 
-          {step === "phone" && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-white/50 mb-2 block">Имя (необязательно)</label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Как тебя зовут?"
-                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl"
-                />
+          {step === "input" && (
+            <>
+              <div className="flex gap-2 p-1 bg-white/5 rounded-2xl">
+                <button
+                  onClick={() => switchMethod("email")}
+                  className={`flex-1 h-9 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+                    method === "email" ? "bg-gradient-to-r from-violet-500 to-cyan-400 text-white" : "text-white/50"
+                  }`}
+                >
+                  <Icon name="Mail" size={15} /> Email
+                </button>
+                <button
+                  onClick={() => switchMethod("phone")}
+                  className={`flex-1 h-9 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+                    method === "phone" ? "bg-gradient-to-r from-violet-500 to-cyan-400 text-white" : "text-white/50"
+                  }`}
+                >
+                  <Icon name="Phone" size={15} /> Телефон
+                </button>
               </div>
-              <div>
-                <label className="text-xs text-white/50 mb-2 block">Номер телефона</label>
-                <Input
-                  value={formatPhone(phone)}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-                  placeholder="+7 (___) ___-__-__"
-                  inputMode="tel"
-                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl text-lg"
-                />
-              </div>
-              <Button
-                onClick={sendCode}
-                disabled={loading || phone.replace(/\D/g, "").length < 11}
-                className="w-full h-12 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 hover:opacity-90 font-bold"
-              >
-                {loading ? (
-                  <Icon name="Loader" size={20} className="animate-spin" />
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-white/50 mb-2 block">Имя (необязательно)</label>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Как тебя зовут?"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl"
+                  />
+                </div>
+                {method === "email" ? (
+                  <div>
+                    <label className="text-xs text-white/50 mb-2 block">Email</label>
+                    <Input
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      inputMode="email"
+                      type="email"
+                      className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl text-lg"
+                    />
+                  </div>
                 ) : (
-                  <>Получить код <Icon name="ArrowRight" size={18} className="ml-2" /></>
+                  <div>
+                    <label className="text-xs text-white/50 mb-2 block">Номер телефона</label>
+                    <Input
+                      value={formatPhone(phone)}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                      placeholder="+7 (___) ___-__-__"
+                      inputMode="tel"
+                      className="bg-white/5 border-white/10 text-white placeholder:text-white/30 h-12 rounded-xl text-lg"
+                    />
+                  </div>
                 )}
-              </Button>
-            </div>
+                <Button
+                  onClick={sendCode}
+                  disabled={loading || !canSend}
+                  className="w-full h-12 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 hover:opacity-90 font-bold"
+                >
+                  {loading ? (
+                    <Icon name="Loader" size={20} className="animate-spin" />
+                  ) : (
+                    <>Получить код <Icon name="ArrowRight" size={18} className="ml-2" /></>
+                  )}
+                </Button>
+              </div>
+            </>
           )}
 
           {step === "code" && (
             <div className="space-y-4">
               <div>
-                <label className="text-xs text-white/50 mb-2 block">
-                  Код отправлен на {formatPhone(phone)}
-                </label>
+                <label className="text-xs text-white/50 mb-2 block">Код отправлен на {target}</label>
                 <Input
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -162,10 +218,10 @@ export default function Login() {
               </Button>
               <div className="flex items-center justify-between text-xs">
                 <button
-                  onClick={() => { setStep("phone"); setCode(""); setError(""); }}
+                  onClick={() => { setStep("input"); setCode(""); setError(""); }}
                   className="text-white/50 hover:text-white flex items-center gap-1"
                 >
-                  <Icon name="ChevronLeft" size={14} /> Изменить номер
+                  <Icon name="ChevronLeft" size={14} /> Изменить
                 </button>
                 <button
                   onClick={sendCode}
@@ -179,9 +235,7 @@ export default function Login() {
           )}
 
           {error && (
-            <div className="text-xs text-red-400 text-center bg-red-500/10 rounded-xl p-3">
-              {error}
-            </div>
+            <div className="text-xs text-red-400 text-center bg-red-500/10 rounded-xl p-3">{error}</div>
           )}
 
           <p className="text-[11px] text-white/30 text-center leading-relaxed">

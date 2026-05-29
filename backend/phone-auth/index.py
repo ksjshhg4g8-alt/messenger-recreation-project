@@ -7,6 +7,9 @@ import random
 from datetime import datetime, timedelta
 import urllib.request
 import urllib.parse
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import psycopg2
 
 def _cors():
@@ -54,14 +57,53 @@ def _send_sms(phone: str, code: str):
         print('SMSRU exception:', str(e))
         return False, f'Ошибка соединения с SMS.ru: {e}'
 
+def _valid_email(email: str) -> bool:
+    return bool(re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email or ''))
+
+def _send_email(to_email: str, code: str):
+    host = os.environ.get('SMTP_HOST', '')
+    port = int(os.environ.get('SMTP_PORT', '465'))
+    user = os.environ.get('SMTP_USER', '')
+    password = os.environ.get('SMTP_PASSWORD', '')
+    sender = os.environ.get('SMTP_FROM', user)
+    if not host or not user or not password:
+        return False, 'SMTP не настроен'
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = f'Код для входа: {code}'
+    msg['From'] = sender
+    msg['To'] = to_email
+    html = f'''
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <h2 style="color:#8b5cf6">Vibe Messenger</h2>
+      <p style="color:#333;font-size:15px">Ваш код для входа:</p>
+      <div style="font-size:34px;font-weight:bold;letter-spacing:8px;color:#111;background:#f4f0ff;padding:16px;text-align:center;border-radius:12px">{code}</div>
+      <p style="color:#888;font-size:13px;margin-top:16px">Код действует 5 минут. Если вы не запрашивали вход — проигнорируйте письмо.</p>
+    </div>'''
+    msg.attach(MIMEText(html, 'html'))
+
+    try:
+        if port == 465:
+            server = smtplib.SMTP_SSL(host, port, timeout=15)
+        else:
+            server = smtplib.SMTP(host, port, timeout=15)
+            server.starttls()
+        server.login(user, password)
+        server.sendmail(sender, [to_email], msg.as_string())
+        server.quit()
+        return True, None
+    except Exception as e:
+        print('SMTP exception:', str(e))
+        return False, f'Ошибка отправки письма: {e}'
+
 def _make_token(user_id: int) -> str:
     raw = f'{user_id}:{secrets.token_hex(32)}'
     return hashlib.sha256(raw.encode()).hexdigest() + f':{user_id}'
 
 def handler(event: dict, context) -> dict:
     '''
-    Авторизация по номеру телефона через SMS.ru.
-    Действия: send-code (отправить код), verify-code (подтвердить и войти), me (получить профиль).
+    Авторизация по телефону (SMS.ru) и email (SMTP).
+    Действия: send-code, verify-code, send-email-code, verify-email-code, me.
     '''
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors(), 'body': ''}
@@ -149,6 +191,80 @@ def handler(event: dict, context) -> dict:
                 'user': {'id': user_id, 'phone': phone, 'name': user_name, 'avatar_url': avatar}
             })
 
+        if action == 'send-email-code':
+            body = json.loads(event.get('body') or '{}')
+            email = (body.get('email') or '').strip().lower()
+            if not _valid_email(email):
+                return _resp(400, {'error': 'Некорректный email'})
+
+            cur.execute(
+                "SELECT COUNT(*) FROM email_codes WHERE email = %s AND created_at > NOW() - INTERVAL '1 minute'",
+                (email,)
+            )
+            if cur.fetchone()[0] > 0:
+                return _resp(429, {'error': 'Подождите минуту перед повторной отправкой'})
+
+            code = f'{random.randint(0, 999999):06d}'
+            expires = datetime.utcnow() + timedelta(minutes=5)
+            cur.execute(
+                "INSERT INTO email_codes (email, code, expires_at) VALUES (%s, %s, %s)",
+                (email, code, expires)
+            )
+
+            sent, err = _send_email(email, code)
+            if not sent:
+                return _resp(500, {'error': err or 'Не удалось отправить письмо'})
+
+            return _resp(200, {'ok': True, 'email': email})
+
+        if action == 'verify-email-code':
+            body = json.loads(event.get('body') or '{}')
+            email = (body.get('email') or '').strip().lower()
+            code = (body.get('code') or '').strip()
+            name = (body.get('name') or '').strip()
+
+            if not email or not code:
+                return _resp(400, {'error': 'Введите email и код'})
+
+            cur.execute(
+                "SELECT id, code, attempts FROM email_codes WHERE email = %s AND used = FALSE AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1",
+                (email,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return _resp(400, {'error': 'Код истёк или не запрошен'})
+
+            code_id, real_code, attempts = row
+            if attempts >= 5:
+                return _resp(429, {'error': 'Слишком много попыток'})
+
+            if code != real_code:
+                cur.execute("UPDATE email_codes SET attempts = attempts + 1 WHERE id = %s", (code_id,))
+                return _resp(400, {'error': 'Неверный код'})
+
+            cur.execute("UPDATE email_codes SET used = TRUE WHERE id = %s", (code_id,))
+
+            cur.execute("SELECT id, name, avatar_url FROM users WHERE email = %s", (email,))
+            user = cur.fetchone()
+
+            if user:
+                user_id, user_name, avatar = user
+                cur.execute("UPDATE users SET last_login_at = NOW() WHERE id = %s", (user_id,))
+            else:
+                display_name = name or email.split('@')[0]
+                cur.execute(
+                    "INSERT INTO users (email, name, email_verified, last_login_at) VALUES (%s, %s, TRUE, NOW()) RETURNING id, name, avatar_url",
+                    (email, display_name)
+                )
+                user_id, user_name, avatar = cur.fetchone()
+
+            token = _make_token(user_id)
+            return _resp(200, {
+                'ok': True,
+                'token': token,
+                'user': {'id': user_id, 'email': email, 'name': user_name, 'avatar_url': avatar}
+            })
+
         if action == 'me':
             token = (event.get('headers') or {}).get('X-Auth-Token') or (event.get('headers') or {}).get('x-auth-token') or ''
             if ':' not in token:
@@ -158,11 +274,11 @@ def handler(event: dict, context) -> dict:
             except Exception:
                 return _resp(401, {'error': 'Не авторизован'})
 
-            cur.execute("SELECT id, phone, name, avatar_url FROM users WHERE id = %s", (user_id,))
+            cur.execute("SELECT id, phone, email, name, avatar_url FROM users WHERE id = %s", (user_id,))
             row = cur.fetchone()
             if not row:
                 return _resp(401, {'error': 'Не авторизован'})
-            return _resp(200, {'user': {'id': row[0], 'phone': row[1], 'name': row[2], 'avatar_url': row[3]}})
+            return _resp(200, {'user': {'id': row[0], 'phone': row[1], 'email': row[2], 'name': row[3], 'avatar_url': row[4]}})
 
         return _resp(400, {'error': 'Неизвестное действие'})
     finally:
