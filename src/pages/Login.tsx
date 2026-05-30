@@ -4,7 +4,10 @@ import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-const AUTH_URL = "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88";
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+const AUTH_URL = API_BASE
+  ? `${API_BASE}/max-auth`
+  : "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88";
 
 export default function Login() {
   const navigate = useNavigate();

@@ -1,8 +1,15 @@
-const CHATS_URL = "https://functions.poehali.dev/056b4c53-e701-4434-85b9-7ae146e97dc5";
-const MEDIA_URL = "https://functions.poehali.dev/6cc8c85a-b5e1-404b-ab3e-315b58940f51";
-const STORIES_URL = "https://functions.poehali.dev/fe54577c-6c23-457c-934b-948b3402a10c";
-const AUTH_URL = "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88";
-const SOCIAL_URL = "https://functions.poehali.dev/c8953d78-cff5-4acb-afcf-abf723ad4cf4";
+// Адрес сервера. Если задан VITE_API_BASE (например http://your-server.com/api) —
+// все функции вызываются как {VITE_API_BASE}/{имя-функции}. Иначе используются облачные URL.
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+
+const fn = (name: string, cloudUrl: string) =>
+  API_BASE ? `${API_BASE}/${name}` : cloudUrl;
+
+const CHATS_URL = fn("chats", "https://functions.poehali.dev/056b4c53-e701-4434-85b9-7ae146e97dc5");
+const MEDIA_URL = fn("media-upload", "https://functions.poehali.dev/6cc8c85a-b5e1-404b-ab3e-315b58940f51");
+const STORIES_URL = fn("stories", "https://functions.poehali.dev/fe54577c-6c23-457c-934b-948b3402a10c");
+const AUTH_URL = fn("max-auth", "https://functions.poehali.dev/fb5f08dd-1ca0-4e74-9ab7-eea1b2889a88");
+const SOCIAL_URL = fn("social", "https://functions.poehali.dev/c8953d78-cff5-4acb-afcf-abf723ad4cf4");
 
 function token(): string {
   return localStorage.getItem("auth_token") || "";
