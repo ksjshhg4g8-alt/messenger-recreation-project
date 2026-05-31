@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Avatar from "@/components/messenger/Avatar";
 import BottomNav from "@/components/messenger/BottomNav";
+import AppLayout from "@/components/messenger/AppLayout";
 import { formatTime, lastSeen } from "@/components/messenger/utils";
 import { api, Post, Profile as ProfileType, fileToBase64 } from "@/lib/api";
 
@@ -108,8 +109,8 @@ export default function Profile() {
   const shareApp = async () => {
     const url = window.location.origin;
     const shareData = {
-      title: "ПтичкаMax",
-      text: "Заходи в ПтичкаMax — общение с друзьями: чаты, звонки, лента и сообщества!",
+      title: "Птичка",
+      text: "Заходи в Птичка — общение с друзьями: чаты, звонки, лента и сообщества!",
       url,
     };
     try {
@@ -127,17 +128,20 @@ export default function Profile() {
 
   if (loading || !profile) {
     return (
-      <div className="flex flex-col h-screen w-screen bg-mesh font-rubik">
+      <AppLayout>
+      <div className="flex flex-col flex-1 min-w-0 bg-mesh font-rubik">
         <div className="flex-1 flex items-center justify-center">
           <Icon name="Loader" size={32} className="animate-spin text-violet-400" />
         </div>
         <BottomNav />
       </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-mesh overflow-hidden font-rubik">
+    <AppLayout>
+    <div className="flex flex-col flex-1 min-w-0 bg-mesh overflow-hidden font-rubik">
       <div className="shrink-0 px-5 py-4 glass-strong border-b border-white/10 flex items-center justify-between">
         {id ? (
           <button onClick={() => navigate(-1)} className="text-white/60 hover:text-white flex items-center gap-1">
@@ -305,5 +309,6 @@ export default function Profile() {
 
       <BottomNav />
     </div>
+    </AppLayout>
   );
 }

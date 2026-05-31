@@ -64,6 +64,9 @@ export interface Message {
   media_url: string | null;
   media_meta: Record<string, unknown> | null;
   reply_to: number | null;
+  reply_text?: string | null;
+  reply_type?: string | null;
+  reply_sender?: string | null;
   created_at: string;
   edited_at: string | null;
   sender_name: string;

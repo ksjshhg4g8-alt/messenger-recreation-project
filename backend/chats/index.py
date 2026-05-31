@@ -92,6 +92,9 @@ def handler(event: dict, context) -> dict:
             cur.execute("""
                 SELECT m.id, m.sender_id, m.type, m.text, m.media_url, m.media_meta,
                     m.reply_to, m.created_at, m.edited_at, u.name AS sender_name, u.avatar_url AS sender_avatar,
+                    (SELECT rm.text FROM messages rm WHERE rm.id = m.reply_to) AS reply_text,
+                    (SELECT rm.type FROM messages rm WHERE rm.id = m.reply_to) AS reply_type,
+                    (SELECT ru.name FROM messages rm JOIN users ru ON ru.id = rm.sender_id WHERE rm.id = m.reply_to) AS reply_sender,
                     (SELECT json_agg(json_build_object('emoji', r.emoji, 'user_id', r.user_id)) FROM message_reactions r WHERE r.message_id = m.id) AS reactions,
                     (SELECT COUNT(*) FROM message_reads mr WHERE mr.message_id = m.id AND mr.user_id != m.sender_id) AS read_count
                 FROM messages m

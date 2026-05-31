@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Avatar from "@/components/messenger/Avatar";
 import BottomNav from "@/components/messenger/BottomNav";
+import AppLayout from "@/components/messenger/AppLayout";
 import { api, Community } from "@/lib/api";
 
 export default function Communities() {
@@ -64,7 +65,8 @@ export default function Communities() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-mesh overflow-hidden font-rubik">
+    <AppLayout>
+    <div className="flex flex-col flex-1 min-w-0 bg-mesh overflow-hidden font-rubik">
       <div className="shrink-0 px-5 py-4 glass-strong border-b border-white/10 flex items-center justify-between">
         <h1 className="font-golos font-black text-xl gradient-text">Сообщества</h1>
         <button
@@ -157,5 +159,6 @@ export default function Communities() {
 
       <BottomNav />
     </div>
+    </AppLayout>
   );
 }

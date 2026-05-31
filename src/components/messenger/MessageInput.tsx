@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { api, fileToBase64 } from "@/lib/api";
+import { api, fileToBase64, Message } from "@/lib/api";
+import { EMOJI_CATEGORIES } from "./emoji";
 
-const EMOJIS = ["😀","😂","😍","🥰","😎","🤔","😭","😡","👍","🙏","🔥","❤️","🎉","💯","👏","🙌","🤣","😅","😉","😴","🤗","😱","🥳","😇","🤩","😋","🫶","💔","✨","⭐"];
 const STICKERS = ["🐶","🐱","🦄","🐼","🦊","🐸","🐵","🦁","🐯","🐨","🐰","🐻","🐹","🐧","🦋"];
 const GIFTS = ["🎁","💐","🌹","🍰","🎂","🧸","💎","🏆","👑","🍾","🎈","💝"];
 
@@ -16,11 +16,24 @@ interface MessageInputProps {
   onSent: () => void;
   editing?: EditTarget | null;
   onCancelEdit?: () => void;
+  replyTo?: Message | null;
+  onCancelReply?: () => void;
 }
+
+const replyPreview = (m: Message) => {
+  if (m.type === "image") return "📷 Фото";
+  if (m.type === "video") return "🎬 Видео";
+  if (m.type === "circle") return "⭕ Кружок";
+  if (m.type === "voice") return "🎤 Голосовое";
+  if (m.type === "sticker") return m.text || "Стикер";
+  if (m.type === "gift") return "🎁 Подарок";
+  if (m.type === "file") return "📎 Файл";
+  return m.text || "";
+};
 
 type Panel = "none" | "emoji" | "sticker" | "gift" | "attach";
 
-export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: MessageInputProps) {
+export default function MessageInput({ chatId, onSent, editing, onCancelEdit, replyTo, onCancelReply }: MessageInputProps) {
   const [text, setText] = useState("");
   const [panel, setPanel] = useState<Panel>("none");
   const [uploading, setUploading] = useState(false);
@@ -48,7 +61,13 @@ export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: 
       return;
     }
     setText("");
-    await send({ chat_id: chatId, type: "text", text: t });
+    await send({
+      chat_id: chatId,
+      type: "text",
+      text: t,
+      reply_to: replyTo?.id,
+    });
+    onCancelReply?.();
   };
 
   const uploadAndSend = async (file: File, type: string, folder: string) => {
@@ -128,8 +147,22 @@ export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: 
           </button>
         </div>
       )}
+      {replyTo && !editing && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-cyan-500/10">
+          <Icon name="Reply" size={15} className="text-cyan-300 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold text-cyan-200/90 truncate">
+              Ответ: {replyTo.sender_name}
+            </p>
+            <p className="text-xs text-white/50 truncate">{replyPreview(replyTo)}</p>
+          </div>
+          <button onClick={() => onCancelReply?.()} className="text-white/40 hover:text-white shrink-0">
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+      )}
       {panel === "emoji" && (
-        <Grid items={EMOJIS} onPick={(e) => setText((t) => t + e)} />
+        <EmojiPicker onPick={(e) => setText((t) => t + e)} />
       )}
       {panel === "sticker" && (
         <Grid big items={STICKERS} onPick={(s) => { send({ chat_id: chatId, type: "sticker", text: s }); setPanel("none"); }} />
@@ -219,6 +252,39 @@ export default function MessageInput({ chatId, onSent, editing, onCancelEdit }: 
       <input ref={photoRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && uploadAndSend(e.target.files[0], "image", "photos")} />
       <input ref={videoRef} type="file" accept="video/*" hidden onChange={(e) => e.target.files?.[0] && uploadAndSend(e.target.files[0], "video", "videos")} />
       <input ref={fileRef} type="file" hidden onChange={(e) => e.target.files?.[0] && uploadAndSend(e.target.files[0], "file", "files")} />
+    </div>
+  );
+}
+
+function EmojiPicker({ onPick }: { onPick: (e: string) => void }) {
+  const [cat, setCat] = useState(EMOJI_CATEGORIES[0].id);
+  const active = EMOJI_CATEGORIES.find((c) => c.id === cat) || EMOJI_CATEGORIES[0];
+  return (
+    <div className="border-b border-white/5">
+      <div className="flex gap-1 px-2 pt-2 overflow-x-auto">
+        {EMOJI_CATEGORIES.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setCat(c.id)}
+            className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition ${
+              cat === c.id ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"
+            }`}
+          >
+            <Icon name={c.icon} size={18} />
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-0.5 p-2 max-h-48 overflow-y-auto">
+        {active.emojis.map((e, i) => (
+          <button
+            key={`${e}-${i}`}
+            onClick={() => onPick(e)}
+            className="text-2xl p-1 hover:bg-white/10 rounded-lg transition"
+          >
+            {e}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import { Message } from "@/lib/api";
 import { formatTime } from "./utils";
 
-const QUICK_EMOJI = ["❤️", "😂", "👍", "🔥", "😮", "😢", "🎉"];
+const QUICK_EMOJI = ["❤️", "😂", "👍", "🔥", "😮", "😢", "🎉", "🥰", "👏", "🙏", "💯", "😍"];
 
 interface MessageBubbleProps {
   msg: Message;
@@ -12,9 +12,22 @@ interface MessageBubbleProps {
   onReact: (messageId: number, emoji: string) => void;
   onEdit?: (msg: Message) => void;
   onDelete?: (messageId: number) => void;
+  onReply?: (msg: Message) => void;
+  onForward?: (msg: Message) => void;
 }
 
-export default function MessageBubble({ msg, me, isGroup, onReact, onEdit, onDelete }: MessageBubbleProps) {
+const previewText = (type: string | null | undefined, text: string | null | undefined) => {
+  if (type === "image") return "📷 Фото";
+  if (type === "video") return "🎬 Видео";
+  if (type === "circle") return "⭕ Кружок";
+  if (type === "voice") return "🎤 Голосовое";
+  if (type === "sticker") return text || "Стикер";
+  if (type === "gift") return "🎁 Подарок";
+  if (type === "file") return "📎 Файл";
+  return text || "";
+};
+
+export default function MessageBubble({ msg, me, isGroup, onReact, onEdit, onDelete, onReply, onForward }: MessageBubbleProps) {
   const [showReact, setShowReact] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const mine = msg.sender_id === me;
@@ -76,6 +89,16 @@ export default function MessageBubble({ msg, me, isGroup, onReact, onEdit, onDel
           {isGroup && !mine && !plain && (
             <p className="text-[11px] font-semibold gradient-text mb-0.5">{msg.sender_name}</p>
           )}
+          {msg.reply_to && !plain && (
+            <div className="mb-1 pl-2 border-l-2 border-cyan-300/60 bg-black/15 rounded-r-md py-0.5 pr-2">
+              <p className="text-[10px] font-semibold text-cyan-200/90 truncate">
+                {msg.reply_sender || "Сообщение"}
+              </p>
+              <p className="text-[11px] text-white/60 truncate max-w-[200px]">
+                {previewText(msg.reply_type, msg.reply_text)}
+              </p>
+            </div>
+          )}
           {renderContent()}
           {!plain && (
             <div className={`flex items-center gap-1 mt-0.5 ${mine ? "justify-end" : ""}`}>
@@ -99,17 +122,31 @@ export default function MessageBubble({ msg, me, isGroup, onReact, onEdit, onDel
           >
             <Icon name="SmilePlus" size={16} />
           </button>
-          {mine && (onEdit || onDelete) && (
-            <button
-              onClick={() => setShowMenu((v) => !v)}
-              className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-white transition shrink-0 ml-1"
-            >
-              <Icon name="EllipsisVertical" size={16} fallback="MoreVertical" />
-            </button>
-          )}
+          <button
+            onClick={() => setShowMenu((v) => !v)}
+            className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-white transition shrink-0 ml-1"
+          >
+            <Icon name="EllipsisVertical" size={16} fallback="MoreVertical" />
+          </button>
           {showMenu && (
-            <div className={`absolute z-20 top-6 ${mine ? "right-0" : "left-0"} bg-[#1a1430] border border-white/10 rounded-xl py-1 shadow-xl min-w-[140px]`}>
-              {msg.type === "text" && onEdit && (
+            <div className={`absolute z-20 top-6 ${mine ? "right-0" : "left-0"} bg-[#1a1430] border border-white/10 rounded-xl py-1 shadow-xl min-w-[150px]`}>
+              {onReply && !plain && (
+                <button
+                  onClick={() => { onReply(msg); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2"
+                >
+                  <Icon name="Reply" size={15} /> Ответить
+                </button>
+              )}
+              {onForward && (
+                <button
+                  onClick={() => { onForward(msg); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2"
+                >
+                  <Icon name="Forward" size={15} /> Переслать
+                </button>
+              )}
+              {mine && msg.type === "text" && onEdit && (
                 <button
                   onClick={() => { onEdit(msg); setShowMenu(false); }}
                   className="w-full text-left px-3 py-2 text-sm text-white/80 hover:bg-white/5 flex items-center gap-2"
@@ -117,7 +154,7 @@ export default function MessageBubble({ msg, me, isGroup, onReact, onEdit, onDel
                   <Icon name="Pencil" size={15} /> Редактировать
                 </button>
               )}
-              {onDelete && (
+              {mine && onDelete && (
                 <button
                   onClick={() => { onDelete(msg.id); setShowMenu(false); }}
                   className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/5 flex items-center gap-2"
@@ -141,7 +178,7 @@ export default function MessageBubble({ msg, me, isGroup, onReact, onEdit, onDel
       )}
 
       {showReact && (
-        <div className={`flex gap-1 mt-1 bg-black/80 backdrop-blur rounded-full px-2 py-1 ${mine ? "self-end" : "self-start"}`}>
+        <div className={`flex flex-wrap gap-1 mt-1 max-w-[260px] bg-black/80 backdrop-blur rounded-2xl px-2 py-1 ${mine ? "self-end" : "self-start"}`}>
           {QUICK_EMOJI.map((e) => (
             <button
               key={e}

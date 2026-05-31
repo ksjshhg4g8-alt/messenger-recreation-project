@@ -173,7 +173,7 @@ export default function Login() {
               <Icon name="MessageCircle" size={36} className="text-white" />
             </div>
             <div className="text-center">
-              <h1 className="font-golos font-black text-3xl gradient-text mb-1">ПтичкаMax</h1>
+              <h1 className="font-golos font-black text-3xl gradient-text mb-1">Птичка</h1>
               <p className="text-white/50 text-sm">
                 {mode === "login" && "Вход по логину и паролю"}
                 {mode === "register" && "Создай новый аккаунт"}

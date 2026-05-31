@@ -10,13 +10,16 @@ import Feed from "./pages/Feed";
 import Communities from "./pages/Communities";
 import CommunityPage from "./pages/CommunityPage";
 import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import IncomingCallWatcher from "./components/messenger/IncomingCallWatcher";
+import { ThemeProvider } from "./lib/theme";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
@@ -30,11 +33,13 @@ const App = () => (
           <Route path="/communities/:id" element={<CommunityPage />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/:id" element={<Profile />} />
+          <Route path="/settings" element={<Settings />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

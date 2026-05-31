@@ -4,6 +4,7 @@ import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import Avatar from "@/components/messenger/Avatar";
 import BottomNav from "@/components/messenger/BottomNav";
+import AppLayout from "@/components/messenger/AppLayout";
 import CommentsSheet from "@/components/messenger/CommentsSheet";
 import { formatTime } from "@/components/messenger/utils";
 import { api, Post, getCurrentUser, fileToBase64 } from "@/lib/api";
@@ -77,7 +78,8 @@ export default function Feed() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-mesh overflow-hidden font-rubik">
+    <AppLayout>
+    <div className="flex flex-col flex-1 min-w-0 bg-mesh overflow-hidden font-rubik">
       <div className="shrink-0 px-5 py-4 glass-strong border-b border-white/10 space-y-3">
         <h1 className="font-golos font-black text-xl gradient-text">Лента</h1>
         <div className="flex gap-2 p-1 bg-white/5 rounded-2xl max-w-xs">
@@ -209,5 +211,6 @@ export default function Feed() {
 
       <BottomNav />
     </div>
+    </AppLayout>
   );
 }

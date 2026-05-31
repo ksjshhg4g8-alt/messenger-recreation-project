@@ -4,6 +4,7 @@ import Avatar from "./Avatar";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import CallModal from "./CallModal";
+import ForwardModal from "./ForwardModal";
 import { api, Chat, Message } from "@/lib/api";
 
 interface ConversationProps {
@@ -17,6 +18,8 @@ export default function Conversation({ chat, onBack, onUpdated }: ConversationPr
   const [me, setMe] = useState(0);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [forwarding, setForwarding] = useState<Message | null>(null);
   const [call, setCall] = useState<"audio" | "video" | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef(0);
@@ -114,6 +117,8 @@ export default function Conversation({ chat, onBack, onUpdated }: ConversationPr
               onReact={handleReact}
               onEdit={(msg) => setEditing({ id: msg.id, text: msg.text || "" })}
               onDelete={handleDelete}
+              onReply={(msg) => setReplyTo(msg)}
+              onForward={(msg) => setForwarding(msg)}
             />
           ))
         )}
@@ -124,7 +129,21 @@ export default function Conversation({ chat, onBack, onUpdated }: ConversationPr
         onSent={() => load()}
         editing={editing}
         onCancelEdit={() => setEditing(null)}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
       />
+
+      {forwarding && (
+        <ForwardModal
+          message={forwarding}
+          currentChatId={chat.id}
+          onClose={() => setForwarding(null)}
+          onDone={() => {
+            setForwarding(null);
+            onUpdated();
+          }}
+        />
+      )}
 
       {call && chat.other_id && (
         <CallModal
